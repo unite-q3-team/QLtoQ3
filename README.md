@@ -131,7 +131,7 @@ qltoq3-gui
 ### установка
 
 ```bash
-git clone https://github.com/q3unite/QLtoQ3
+git clone https://github.com/unite-q3-team/QLtoQ3
 cd QLtoQ3
 ```
 
