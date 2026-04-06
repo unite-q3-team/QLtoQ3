@@ -1,0 +1,6 @@
+__pycache__/
+*.pyd
+*.egg-info/
+.vscode/
+*.log
+bspc.log

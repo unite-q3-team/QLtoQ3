@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qltoq3"
+dynamic = ["version"]
+description = "Quake Live to Quake 3 pk3 converter"
+readme = {text = "Converts Quake Live .pk3 maps to Quake 3 Arena format", content-type = "text/plain"}
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "q3unite.su"},
+]
+keywords = ["quake", "quake3", "quakelive", "pk3", "bsp", "converter"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Games/Entertainment :: First Person Shooters",
+]
+dependencies = [
+    "Pillow>=9.0",
+    "tqdm>=4.60",
+    "customtkinter>=5.2",
+]
+
+[project.optional-dependencies]
+gui = ["customtkinter>=5.2"]
+
+[project.urls]
+Homepage = "https://q3unite.su/"
+Repository = "https://github.com/qltoq3/QLtoQ3"
+
+[project.scripts]
+qltoq3 = "qltoq3.cli:main"
+
+[project.gui-scripts]
+qltoq3-gui = "qltoq3.gui:main"
+
+[tool.setuptools]
+packages = ["qltoq3"]
+
+[tool.setuptools.dynamic]
+version = {attr = "qltoq3.__version__"}
+
+[tool.setuptools.package-data]
+qltoq3 = [
+    "bundled/*.json",
+    "bundled/*.sha256",
+    "bundled/*.png",
+    "bundled/*.ico",
+    "bundled/*.exe",
+    "bundled/*.dll",
+]
