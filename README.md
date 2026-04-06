@@ -2,9 +2,10 @@
 ## en
 a tiny converter for Quake Live `.pk3` maps to Quake 3: Arena format.
 
-<img width="795" height="728" alt="image" src="https://github.com/user-attachments/assets/841162f6-974d-4346-a970-3549dccea43b" />
-<img width="1102" height="882" alt="image" src="https://github.com/user-attachments/assets/876b53fc-8483-4194-b864-b8c9731c063b" />
-
+<p align="center">
+    <img width="351" alt="image" src="assets/scr1.png" />
+    <img width="400" alt="image" src="assets/scr2.png" />
+</p>
 
 ### overview
 
