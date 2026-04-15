@@ -37,6 +37,7 @@ from .compat import q3_compat
 from .constants import bundled_dir, repo_root
 from .l10n import lang_from_argv, set_lang, tr
 from .progress import format_elapsed as _format_elapsed_sec
+from .tempdirs import find_stale_temp_dirs, remove_temp_dirs
 
 
 def _gui_stdout_line(s: str) -> None:
@@ -50,6 +51,40 @@ def _gui_stdout_line(s: str) -> None:
 def _report_action(action_key: str) -> None:
     if "--no-progress" in sys.argv:
         _gui_stdout_line(f"QLTOQ3_ACTION {tr(action_key)}")
+
+
+def _is_noninteractive() -> bool:
+    env = (os.environ.get("QLTOQ3_NONINTERACTIVE") or "").strip().lower()
+    if env in ("1", "true", "yes", "on"):
+        return True
+    return not sys.stdin.isatty()
+
+
+def _cleanup_stale_temp_dirs(force: bool) -> None:
+    stale = find_stale_temp_dirs()
+    if not stale:
+        return
+    print(tr("tmp.found", n=len(stale)))
+    if force:
+        removed, failed = remove_temp_dirs(stale)
+        print(tr("tmp.removed", n=removed))
+        if failed:
+            print(tr("tmp.remove_failed", n=failed))
+        return
+    if _is_noninteractive():
+        print(tr("tmp.noninteractive_skip", n=len(stale)))
+        return
+    try:
+        ans = input(tr("tmp.ask_remove")).strip().lower()
+    except EOFError:
+        ans = ""
+    if ans not in ("y", "yes", "д", "да"):
+        print(tr("tmp.kept"))
+        return
+    removed, failed = remove_temp_dirs(stale)
+    print(tr("tmp.removed", n=removed))
+    if failed:
+        print(tr("tmp.remove_failed", n=failed))
 
 
 def pool_workers(
@@ -280,6 +315,7 @@ def main() -> None:
     from .cli_parse import parse_args
 
     args, input_files = parse_args(argv)
+    _cleanup_stale_temp_dirs(args.force)
 
     if args.no_color:
         colors.disable_colors()

@@ -12,9 +12,12 @@ a tiny converter for Quake Live `.pk3` maps to Quake 3: Arena format.
 - works with local `.pk3` files and directories
 - works with steam workshop item ids
 - works with steam collection ids (auto expands many items)
+- accepts workshop/collection links and extracts ids automatically
 - converts textures, models and map metadata for quake 3
 - runs optional bot navmesh (`aas`) with `bspc`
 - restores missing quake-live assets from `pak00.pk3` when available
+- has windows portable `exe` bundle and installer builds
+- supports external locales from `locales/*.toml` with built-in fallback
 
 ### install
 
@@ -42,6 +45,11 @@ optional tools:
 - `bspc.exe` for aas (path set by `--bspc`)
 - `ffmpeg` for `ogg` -> `wav` (path set by `--ffmpeg`)
 
+windows artifacts:
+
+- portable bundle: `qltoq3-cli.exe` + `qltoq3-gui.exe`
+- installer: `QLtoQ3-setup-<version>-win64.exe`
+
 ### cli usage
 
 show options:
@@ -62,10 +70,22 @@ convert workshop item(s):
 qltoq3 --output q3 --workshop 111111111 222222222
 ```
 
+or pass links directly:
+
+```bash
+qltoq3 --output q3 --workshop https://steamcommunity.com/sharedfiles/filedetails/?id=3429749783
+```
+
 convert collection(s):
 
 ```bash
 qltoq3 --output q3 --collection 333333333
+```
+
+or pass links directly:
+
+```bash
+qltoq3 --output q3 --collection https://steamcommunity.com/workshop/filedetails/?id=1256729030
 ```
 
 quick run without aas:
@@ -122,6 +142,10 @@ qltoq3-gui
 - set dependencies and paths (`bspc`, `ffmpeg`, `steamcmd`)
 - tune worker/timeout/bspc options
 - watch status and logs while converting
+- output folder checks before run (missing folder, write access, create prompt)
+- startup cleanup prompt for leftover temp folders
+- startup update check option (and optional auto download)
+- external localization support via `locales/en.toml` and `locales/ru.toml`
 
 # qltoq3
 ## ru
@@ -132,6 +156,9 @@ qltoq3-gui
 - локальные `.pk3` и папки с картами
 - айдишники из мастерской Steam через `--workshop`
 - айдишники коллекций Steam через `--collection`
+- ссылки мастерской Steam с автоматическим извлечением id
+- windows portable `exe` бандл и установщик
+- внешние локали `locales/*.toml` с фоллбеком на встроенные строки
 
 ### установка
 
@@ -149,6 +176,11 @@ pip install -e .
 ```bash
 pip install .
 ```
+
+windows файлы:
+
+- portable бандл: `qltoq3-cli.exe` + `qltoq3-gui.exe`
+- инсталлятор: `QLtoQ3-setup-<version>-win64.exe`
 
 ### cli usage
 
@@ -168,10 +200,22 @@ steam workshop:
 qltoq3 --output q3 --workshop 111111111 222222222
 ```
 
+или можно передать ссылку:
+
+```bash
+qltoq3 --output q3 --workshop https://steamcommunity.com/sharedfiles/filedetails/?id=3429749783
+```
+
 коллекция:
 
 ```bash
 qltoq3 --output q3 --collection 333333333
+```
+
+или можно передать ссылку:
+
+```bash
+qltoq3 --output q3 --collection https://steamcommunity.com/workshop/filedetails/?id=1256729030
 ```
 
 без aas:
@@ -221,3 +265,9 @@ qltoq3 --output q3 input_dir --no-aas
 ```bash
 qltoq3-gui
 ```
+
+- есть режимы локальных файлов и steam
+- есть проверки папки вывода перед запуском (создание/доступ)
+- есть промпт очистки оставшихся временных папок при старте
+- есть проверка обновлений при запуске и опция автоскачивания
+- локализация может переопределяться внешними файлами `locales/en.toml` и `locales/ru.toml`

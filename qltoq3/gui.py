@@ -15,15 +15,27 @@ import threading
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
-from tkinter import END, filedialog
+from tkinter import END, filedialog, messagebox
 from typing import Any, Callable
 
 import customtkinter as ctk
 
+from .cli_parse import extract_steam_id
 from .colors import strip_ansi
 from .constants import bundled_dir, repo_root
+from . import __version__
 from .l10n import default_lang_from_env, set_lang, tr
 from .progress import format_elapsed as _format_elapsed_sec
+from .tempdirs import find_stale_temp_dirs, remove_temp_dirs
+from .updater import (
+    ReleaseInfo,
+    download_file,
+    fetch_latest_release,
+    is_installed_mode,
+    is_newer_version,
+    read_sha256_from_file,
+    verify_sha256,
+)
 
 ACCENT = "#D97800"
 ACCENT_HOVER = "#B85F00"
@@ -67,6 +79,8 @@ CHK_DEF: list[tuple[str, str]] = [
     ("verbose", "gui.opt.verbose"),
     ("show_skipped", "gui.opt.show_skipped"),
     ("time_stages", "gui.opt.time_stages"),
+    ("check_updates_on_start", "gui.opt.check_updates_on_start"),
+    ("auto_download_update", "gui.opt.auto_download_update"),
     ("no_aas_optimize", "gui.opt.no_aas_optimize"),
     ("aas_geometry_fast", "gui.opt.aas_geometry_fast"),
     ("aas_bspc_breadthfirst", "gui.opt.aas_bspc_breadthfirst"),
@@ -193,6 +207,9 @@ def default_gui_state(bd: str, root: str) -> dict[str, Any]:
         "verbose": False,
         "show_skipped": False,
         "time_stages": False,
+        "check_updates_on_start": True,
+        "auto_download_update": False,
+        "latest_known_version": "",
         "no_aas_optimize": False,
         "aas_geometry_fast": False,
         "aas_bspc_breadthfirst": False,
@@ -354,6 +371,10 @@ class QlToQ3App(ctk.CTk):
         self._run_started_t: float | None = None
         self._elapsed_after_id: str | None = None
         self._stop_elapsed_snapshot: float | None = None
+        self._latest_known_version = ""
+        self._pending_update_installer: Path | None = None
+        self._pending_update_version = ""
+        self._installed_mode = is_installed_mode(Path(sys.executable))
         init_lang = default_lang_from_env()
         if init_lang not in ("en", "ru"):
             init_lang = "en"
@@ -566,6 +587,8 @@ class QlToQ3App(ctk.CTk):
 
         self._show_home()
         self._load_state()
+        self._offer_stale_temp_cleanup()
+        self._start_update_check()
 
         self.bind("<Configure>", self._update_dimensions_event)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -949,6 +972,40 @@ class QlToQ3App(ctk.CTk):
             placeholder_text=tr("gui.placeholder_auto"),
         )
         self._aas_threads.pack(side="right")
+        upd_sep = ctk.CTkFrame(sc, height=2, fg_color="#333333")
+        upd_sep.pack(fill="x", pady=25)
+        self._lab_update = ctk.CTkLabel(
+            sc,
+            text=tr("gui.header_updates").lower(),
+            font=ctk.CTkFont(weight="bold"),
+        )
+        self._lab_update.pack(anchor="w", pady=(0, 15))
+        self._lang_labels.append((self._lab_update, "gui.header_updates"))
+        upd_row = ctk.CTkFrame(sc, fg_color="transparent")
+        upd_row.pack(fill="x", padx=10, pady=(0, 8))
+        self._btn_check_updates = ctk.CTkButton(
+            upd_row,
+            text=tr("gui.update_check_now"),
+            command=self._check_updates_now,
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+            width=190,
+            height=34,
+        )
+        self._btn_check_updates.pack(side="left")
+        self._lab_update_current = ctk.CTkLabel(
+            upd_row,
+            text=tr("gui.update_current_version", version=__version__),
+            text_color="#aaaaaa",
+        )
+        self._lab_update_current.pack(side="left", padx=(12, 0))
+        self._lab_update_latest = ctk.CTkLabel(
+            sc,
+            text=tr("gui.update_latest_version", version="-"),
+            text_color="#aaaaaa",
+            anchor="w",
+        )
+        self._lab_update_latest.pack(fill="x", padx=10, pady=(0, 10))
         self._btn_reset = ctk.CTkButton(
             sc,
             text=tr("gui.reset"),
@@ -1099,6 +1156,11 @@ class QlToQ3App(ctk.CTk):
         self._aas_threads.configure(placeholder_text=tr("gui.placeholder_auto"))
         self._log_path.configure(placeholder_text=tr("gui.log_path_ph"))
         self._btn_run.configure(text=_ICO_PLAY if self._f_ico_btn else tr("gui.run"))
+        self._btn_check_updates.configure(text=tr("gui.update_check_now"))
+        self._lab_update_current.configure(
+            text=tr("gui.update_current_version", version=__version__)
+        )
+        self._refresh_latest_version_label()
         self._lang_icon.configure(text=_ICO_GLOBE if self._f_ico_globe else "🌐")
 
     def _on_in_mode(self, choice: str) -> None:
@@ -1110,10 +1172,21 @@ class QlToQ3App(ctk.CTk):
             self.steam_frame.grid(row=2, column=0, sticky="nsew")
 
     def _add_workshop(self) -> None:
-        v = self._ws_entry.get().strip()
-        if v.isdigit():
-            self._ws_listbox.insert(END, v)
+        tokens = split_tokens(self._ws_entry.get())
+        if not tokens:
+            return
+        existing = set(map(str, self._ws_listbox.get(0, END)))
+        added = 0
+        for tok in tokens:
+            sid = extract_steam_id(tok)
+            if sid and sid not in existing:
+                self._ws_listbox.insert(END, sid)
+                existing.add(sid)
+                added += 1
+        if added > 0:
             self._ws_entry.delete(0, END)
+        else:
+            self._status.configure(text=tr("gui.ws_id_invalid"), text_color="#ff5555")
 
     def _remove_ws(self) -> None:
         for i in reversed(self._ws_listbox.curselection()):
@@ -1123,10 +1196,185 @@ class QlToQ3App(ctk.CTk):
         self._ws_listbox.delete(0, END)
 
     def _add_collection(self) -> None:
-        v = self._col_entry.get().strip()
-        if v.isdigit():
-            self._col_listbox.insert(END, v)
+        tokens = split_tokens(self._col_entry.get())
+        if not tokens:
+            return
+        existing = set(map(str, self._col_listbox.get(0, END)))
+        added = 0
+        for tok in tokens:
+            sid = extract_steam_id(tok)
+            if sid and sid not in existing:
+                self._col_listbox.insert(END, sid)
+                existing.add(sid)
+                added += 1
+        if added > 0:
             self._col_entry.delete(0, END)
+        else:
+            self._status.configure(text=tr("gui.col_id_invalid"), text_color="#ff5555")
+
+    def _offer_stale_temp_cleanup(self) -> None:
+        stale = find_stale_temp_dirs()
+        if not stale:
+            return
+        do_remove = messagebox.askyesno(
+            tr("gui.tmp_found_title"),
+            tr("gui.tmp_found_msg", n=len(stale)),
+        )
+        if not do_remove:
+            self._status.configure(text=tr("gui.tmp_kept"), text_color="#aaaaaa")
+            return
+        removed, failed = remove_temp_dirs(stale)
+        if failed:
+            self._status.configure(
+                text=tr("gui.tmp_remove_failed", n=failed), text_color="#ff5555"
+            )
+            return
+        self._status.configure(text=tr("gui.tmp_removed", n=removed), text_color="#aaaaaa")
+
+    def _refresh_latest_version_label(self) -> None:
+        shown = self._latest_known_version or "-"
+        self._lab_update_latest.configure(
+            text=tr("gui.update_latest_version", version=shown)
+        )
+
+    def _check_updates_now(self) -> None:
+        self._status.configure(text=tr("gui.update_checking"), text_color="#aaaaaa")
+        threading.Thread(
+            target=self._update_check_worker,
+            kwargs={"manual": True},
+            daemon=True,
+        ).start()
+
+    def _start_update_check(self) -> None:
+        cb = self._chk.get("check_updates_on_start")
+        if not cb or cb[0].get() != 1:
+            return
+        threading.Thread(target=self._update_check_worker, daemon=True).start()
+
+    def _update_check_worker(self, manual: bool = False) -> None:
+        info = fetch_latest_release()
+        if info is None:
+            if manual:
+                self.after(
+                    0,
+                    lambda: self._status.configure(
+                        text=tr("gui.update_check_failed"), text_color="#ff5555"
+                    ),
+                )
+            return
+        self.after(0, self._on_update_info, info, manual)
+
+    def _on_update_info(self, info: ReleaseInfo, manual: bool) -> None:
+        self._latest_known_version = info.latest_version
+        self._refresh_latest_version_label()
+        if not is_newer_version(info.latest_version, __version__):
+            if manual:
+                self._status.configure(text=tr("gui.update_none"), text_color="#55ff55")
+            return
+        self._status.configure(
+            text=tr("gui.update_available_status", latest=info.latest_version),
+            text_color="#aaaaaa",
+        )
+        auto_cb = self._chk.get("auto_download_update")
+        auto_enabled = bool(auto_cb and auto_cb[0].get() == 1)
+        if auto_enabled:
+            self._auto_update_flow(info)
+            return
+        self._notify_update_available(info)
+
+    def _notify_update_available(self, info: ReleaseInfo) -> None:
+        open_now = messagebox.askyesno(
+            tr("gui.update_title"),
+            tr(
+                "gui.update_available_msg",
+                current=__version__,
+                latest=info.latest_version,
+            ),
+        )
+        if open_now:
+            webbrowser.open(info.asset_url or info.html_url)
+
+    def _auto_update_flow(self, info: ReleaseInfo) -> None:
+        if not self._installed_mode:
+            self._status.configure(
+                text=tr("gui.update_auto_installed_only"),
+                text_color="#aaaaaa",
+            )
+            return
+        if not info.asset_url or not info.asset_name or not info.sha256_url:
+            self._status.configure(
+                text=tr("gui.update_integrity_missing"),
+                text_color="#ff5555",
+            )
+            return
+        threading.Thread(
+            target=self._download_and_stage_update,
+            args=(info,),
+            daemon=True,
+        ).start()
+
+    def _download_and_stage_update(self, info: ReleaseInfo) -> None:
+        installer_path = Path(tempfile.gettempdir()) / info.asset_name
+        sha_path = installer_path.with_suffix(installer_path.suffix + ".sha256")
+        try:
+            download_file(info.asset_url, installer_path)
+            download_file(info.sha256_url, sha_path)
+            expected = read_sha256_from_file(sha_path)
+            if not expected or not verify_sha256(installer_path, expected):
+                self.after(
+                    0,
+                    lambda: self._status.configure(
+                        text=tr("gui.update_integrity_failed"),
+                        text_color="#ff5555",
+                    ),
+                )
+                return
+        except OSError:
+            self.after(
+                0,
+                lambda: self._status.configure(
+                    text=tr("gui.update_download_failed"), text_color="#ff5555"
+                ),
+            )
+            return
+        self.after(0, self._schedule_silent_update, info.latest_version, installer_path)
+
+    def _schedule_silent_update(self, latest: str, installer_path: Path) -> None:
+        if self._running:
+            self._pending_update_installer = installer_path
+            self._pending_update_version = latest
+            self._status.configure(
+                text=tr("gui.update_deferred", latest=latest),
+                text_color="#aaaaaa",
+            )
+            return
+        self._run_silent_update(installer_path, latest)
+
+    def _run_silent_update(self, installer_path: Path, latest: str) -> None:
+        self._status.configure(
+            text=tr("gui.update_silent_start", latest=latest),
+            text_color="#aaaaaa",
+        )
+        if not installer_path.is_file():
+            self._status.configure(
+                text=tr("gui.update_download_failed"),
+                text_color="#ff5555",
+            )
+            return
+        try:
+            self._on_close()
+            subprocess.Popen(
+                [
+                    str(installer_path),
+                    "/VERYSILENT",
+                    "/SUPPRESSMSGBOXES",
+                    "/NORESTART",
+                    "/SP-",
+                ],
+                cwd=str(installer_path.parent),
+            )
+        except OSError as e:
+            print(tr("gui.update_run_failed", error=e), file=sys.stderr)
 
     def _remove_col(self) -> None:
         for i in reversed(self._col_listbox.curselection()):
@@ -1140,6 +1388,105 @@ class QlToQ3App(ctk.CTk):
         if d:
             self._out.delete(0, "end")
             self._out.insert(0, d)
+
+    def _choose_output_dir(self, initial: Path | None = None) -> Path | None:
+        title = tr("gui.out_pick_title")
+        start_dir = str(initial) if initial and initial.exists() else os.getcwd()
+        d = filedialog.askdirectory(title=title, initialdir=start_dir)
+        if not d:
+            return None
+        p = Path(d)
+        self._out.delete(0, "end")
+        self._out.insert(0, str(p))
+        return p
+
+    def _check_output_writable(self, out_dir: Path) -> str | None:
+        probe = out_dir / f".qltoq3_write_test_{os.getpid()}_{int(time.time() * 1000)}.tmp"
+        try:
+            with open(probe, "w", encoding="utf-8") as f:
+                f.write("ok")
+            probe.unlink(missing_ok=True)
+            return None
+        except OSError as e:
+            return str(e)
+
+    def _prepare_output_dir(self, raw_output: str) -> str | None:
+        out_dir = Path(raw_output).expanduser()
+        while True:
+            if out_dir.exists() and not out_dir.is_dir():
+                messagebox.showerror(
+                    tr("gui.out_not_dir_title"),
+                    tr("gui.out_not_dir_msg", path=out_dir),
+                )
+                chosen = self._choose_output_dir(out_dir.parent if out_dir.parent.exists() else None)
+                if chosen is None:
+                    self._status.configure(
+                        text=tr("gui.out_canceled"),
+                        text_color="#ff5555",
+                    )
+                    return None
+                out_dir = chosen
+                continue
+
+            if not out_dir.exists():
+                create_ok = messagebox.askyesno(
+                    tr("gui.out_missing_title"),
+                    tr("gui.out_missing_msg", path=out_dir),
+                )
+                if not create_ok:
+                    self._status.configure(
+                        text=tr("gui.out_canceled"),
+                        text_color="#ff5555",
+                    )
+                    return None
+                try:
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                except OSError as e:
+                    choose_other = messagebox.askyesno(
+                        tr("gui.out_mkdir_fail_title"),
+                        tr("gui.out_mkdir_fail_msg", path=out_dir, error=e),
+                    )
+                    if not choose_other:
+                        self._status.configure(
+                            text=tr("gui.out_canceled"),
+                            text_color="#ff5555",
+                        )
+                        return None
+                    chosen = self._choose_output_dir(out_dir.parent if out_dir.parent.exists() else None)
+                    if chosen is None:
+                        self._status.configure(
+                            text=tr("gui.out_canceled"),
+                            text_color="#ff5555",
+                        )
+                        return None
+                    out_dir = chosen
+                    continue
+
+            write_err = self._check_output_writable(out_dir)
+            if write_err is not None:
+                choose_other = messagebox.askyesno(
+                    tr("gui.out_nowrite_title"),
+                    tr("gui.out_nowrite_msg", path=out_dir, error=write_err),
+                )
+                if not choose_other:
+                    self._status.configure(
+                        text=tr("gui.out_retry_hint"),
+                        text_color="#ff5555",
+                    )
+                    return None
+                chosen = self._choose_output_dir(out_dir)
+                if chosen is None:
+                    self._status.configure(
+                        text=tr("gui.out_canceled"),
+                        text_color="#ff5555",
+                    )
+                    return None
+                out_dir = chosen
+                continue
+
+            self._out.delete(0, "end")
+            self._out.insert(0, str(out_dir))
+            return str(out_dir)
 
     def _state(self) -> dict[str, Any]:
         return {
@@ -1158,6 +1505,9 @@ class QlToQ3App(ctk.CTk):
             "verbose": self._chk["verbose"][0].get() == 1,
             "show_skipped": self._chk["show_skipped"][0].get() == 1,
             "time_stages": self._chk["time_stages"][0].get() == 1,
+            "check_updates_on_start": self._chk["check_updates_on_start"][0].get() == 1,
+            "auto_download_update": self._chk["auto_download_update"][0].get() == 1,
+            "latest_known_version": self._latest_known_version,
             "no_aas_optimize": self._chk["no_aas_optimize"][0].get() == 1,
             "aas_geometry_fast": self._chk["aas_geometry_fast"][0].get() == 1,
             "aas_bspc_breadthfirst": self._chk["aas_bspc_breadthfirst"][0].get() == 1,
@@ -1239,6 +1589,8 @@ class QlToQ3App(ctk.CTk):
             else tr("gui.mode_local")
         )
         self._on_in_mode(self._in_mode.get())
+        self._latest_known_version = str(m.get("latest_known_version", "")).strip()
+        self._refresh_latest_version_label()
 
     def _load_state(self) -> None:
         path = _gui_state_file()
@@ -1377,6 +1729,10 @@ class QlToQ3App(ctk.CTk):
         if not st["output"]:
             self._status.configure(text=tr("gui.err_output"), text_color="#ff5555")
             return
+        prepared_output = self._prepare_output_dir(st["output"])
+        if prepared_output is None:
+            return
+        st["output"] = prepared_output
         if not st["_has_inputs"]:
             self._status.configure(text=tr("gui.err_paths"), text_color="#ff5555")
             return
@@ -1396,6 +1752,8 @@ class QlToQ3App(ctk.CTk):
         self._status.configure(text=tr("gui.running"), text_color="#aaaaaa")
         self._append_log_chunk(subprocess.list2cmdline(cmd) + "\n")
         try:
+            child_env = os.environ.copy()
+            child_env["QLTOQ3_NONINTERACTIVE"] = "1"
             self._proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -1405,6 +1763,7 @@ class QlToQ3App(ctk.CTk):
                 errors="replace",
                 bufsize=1,
                 cwd=os.getcwd(),
+                env=child_env,
                 creationflags=_popen_creationflags(),
             )
         except OSError as e:
@@ -1500,6 +1859,12 @@ class QlToQ3App(ctk.CTk):
             self._status.configure(
                 text=tr("gui.done_err", code=code, t=td), text_color="#ff5555"
             )
+        if self._pending_update_installer and self._pending_update_version:
+            installer = self._pending_update_installer
+            latest = self._pending_update_version
+            self._pending_update_installer = None
+            self._pending_update_version = ""
+            self._run_silent_update(installer, latest)
 
     def _stop(self) -> None:
         if self._proc and self._running:

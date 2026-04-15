@@ -32,6 +32,7 @@ dependencies = [
     "Pillow>=9.0",
     "tqdm>=4.60",
     "customtkinter>=5.2",
+    "tomli; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]

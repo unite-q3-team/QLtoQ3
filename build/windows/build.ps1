@@ -19,6 +19,7 @@ $GuiSpec = Join-Path $RepoRoot "build\windows\pyinstaller\gui.spec"
 $InstallerScript = Join-Path $RepoRoot "build\windows\installer\qltoq3.iss"
 $LogoPng = Join-Path $RepoRoot "qltoq3\bundled\logo.png"
 $BuildIconPath = Join-Path $RepoRoot "build\windows\out\qltoq3.ico"
+$WizardSmallImagePath = Join-Path $RepoRoot "build\windows\out\wizard-small.bmp"
 
 function Invoke-CheckedPython {
     param(
@@ -60,6 +61,11 @@ try {
         "-c",
         "import os; from PIL import Image; Image.open(os.environ['QLTOQ3_LOGO_PNG']).save(os.environ['QLTOQ3_ICON_PATH'], format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
     )
+    $env:QLTOQ3_WIZARD_SMALL_PATH = $WizardSmallImagePath
+    Invoke-CheckedPython -Arguments @(
+        "-c",
+        "import os; from PIL import Image; src=Image.open(os.environ['QLTOQ3_LOGO_PNG']).convert('RGBA'); resampling=getattr(Image, 'Resampling', Image); src.thumbnail((55,55), resampling.LANCZOS); bg=Image.new('RGB',(55,55),(28,28,28)); bg.paste(src,((55-src.width)//2,(55-src.height)//2),src); bg.save(os.environ['QLTOQ3_WIZARD_SMALL_PATH'], format='BMP')"
+    )
 
     Invoke-CheckedPython -Arguments @(
         "-m", "PyInstaller",
@@ -87,6 +93,11 @@ try {
         Copy-Item $BundledSrc (Join-Path $PortableRoot "bundled") -Recurse -Force
     }
 
+    $LocalesSrc = Join-Path $RepoRoot "locales"
+    if (Test-Path $LocalesSrc) {
+        Copy-Item $LocalesSrc (Join-Path $PortableRoot "locales") -Recurse -Force
+    }
+
     $ReadmePath = Join-Path $RepoRoot "README.md"
     if (Test-Path $ReadmePath) {
         Copy-Item $ReadmePath (Join-Path $PortableRoot "README.md") -Force
@@ -108,6 +119,7 @@ try {
             "/DSourceDir=$PortableRoot" `
             "/DOutputDir=$InstallerOut" `
             "/DInstallerIconFile=$BuildIconPath" `
+            "/DWizardSmallImageFile=$WizardSmallImagePath" `
             "$InstallerScript"
         if ($LASTEXITCODE -ne 0) {
             throw ("inno setup compiler failed, code: {0}." -f $LASTEXITCODE)

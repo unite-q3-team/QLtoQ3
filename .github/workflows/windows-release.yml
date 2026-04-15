@@ -29,6 +29,18 @@ jobs:
         shell: powershell
         run: ./build/windows/build.ps1 -BuildInstaller
 
+      - name: Generate sha256 files
+        shell: powershell
+        run: |
+          Get-ChildItem -Path dist/windows/installer/*.exe | ForEach-Object {
+            $hash = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)" | Out-File -FilePath ($_.FullName + ".sha256") -Encoding ascii -NoNewline
+          }
+          Get-ChildItem -Path dist/windows/portable/*.zip | ForEach-Object {
+            $hash = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)" | Out-File -FilePath ($_.FullName + ".sha256") -Encoding ascii -NoNewline
+          }
+
       - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
@@ -43,6 +55,15 @@ jobs:
           path: dist/windows/installer/*.exe
           if-no-files-found: error
 
+      - name: Upload sha256 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: qltoq3-sha256-win64
+          path: |
+            dist/windows/portable/*.sha256
+            dist/windows/installer/*.sha256
+          if-no-files-found: error
+
       - name: Attach artifacts to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -50,3 +71,9 @@ jobs:
           files: |
             dist/windows/portable/*.zip
             dist/windows/installer/*.exe
+            dist/windows/portable/*.sha256
+            dist/windows/installer/*.sha256
+          body: |
+            release: ${{ github.ref_name }}
+            included: windows installer, portable zip
+            hashes: sha256 files for installer and portable

@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -194,6 +195,31 @@ def mk_parser():
 _QL_STEAM_APP_ID = "282440"
 
 
+def extract_steam_id(token: str) -> str | None:
+    s = (token or "").strip()
+    if not s:
+        return None
+    if s.isdigit():
+        return s
+    candidate = s
+    if "://" not in candidate:
+        candidate = "https://steamcommunity.com/" + candidate.lstrip("/")
+    try:
+        parsed = urllib.parse.urlparse(candidate)
+        q = urllib.parse.parse_qs(parsed.query)
+        vals = q.get("id", [])
+        if vals:
+            v = vals[0].strip()
+            if v.isdigit():
+                return v
+    except Exception:
+        pass
+    m = re.search(r"(?:\?|&)id=(\d+)", s)
+    if m:
+        return m.group(1)
+    return None
+
+
 def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     args = mk_parser().parse_args(argv)
     if getattr(args, "aas_geometry_fast", False):
@@ -206,8 +232,9 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         _col_ids: list[str] = []
         _col_paths: list[str] = []
         for x in args.collection:
-            if x.isdigit():
-                _col_ids.append(x)
+            sid = extract_steam_id(x)
+            if sid is not None:
+                _col_ids.append(sid)
             else:
                 _col_paths.append(x)
         args.collection = _col_ids
@@ -215,7 +242,10 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
             args.paths = list(args.paths) + _col_paths
 
     if args.workshop:
-        w_ids.extend(args.workshop)
+        for x in args.workshop:
+            sid = extract_steam_id(x)
+            if sid is not None:
+                w_ids.append(sid)
 
     if args.collection:
         for cid in args.collection:

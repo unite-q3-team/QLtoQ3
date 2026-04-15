@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import sys
+from pathlib import Path
+
+try:
+    import tomllib  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - py3.10 fallback
+    import tomli as tomllib  # type: ignore[no-redef]
 
 _LANG = "en"
 
@@ -111,10 +119,10 @@ _merge(
         "stats.pak00_integrity": "pak00 integrity",
         "stats.pak00_bad": "sha-256 does not match reference (file may not be original ql pak00)",
         "stats.done": "done in {t}",
-        "stats.hint_all_q3_compat": "Nothing was written while some pk3 were skipped as already Q3-like. Use --force to convert them anyway.",
-        "stats.hint_skip_mapless": "Nothing was written: some pk3 were skipped with --skip-mapless (no .bsp found). Remove --skip-mapless or add --force to process those packs.",
-        "stats.hint_failures": "One or more pk3 failed during conversion (see error lines above). Use --verbose for full tracebacks.",
-        "stats.hint_nothing_written": "Nothing was written (no successful conversions). If you expected output, check errors above or input paths.",
+        "stats.hint_all_q3_compat": "nothing was written while some pk3 were skipped as already q3-like. use --force to convert them anyway.",
+        "stats.hint_skip_mapless": "nothing was written: some pk3 were skipped with --skip-mapless (no .bsp found). remove --skip-mapless or add --force to process those packs.",
+        "stats.hint_failures": "one or more pk3 failed during conversion (see error lines above). use --verbose for full tracebacks.",
+        "stats.hint_nothing_written": "nothing was written (no successful conversions). if you expected output, check errors above or input paths.",
         "dry.title": "dry run - nothing written",
         "dry.out": "out:",
         "dry.q3_compat": "q3-compatible:",
@@ -174,8 +182,8 @@ _merge(
         "gui.out_folder": "output folder (converted pk3 files go here)",
         "gui.browse": "...",
         "gui.pk3_sources": "pk3 files and folders on this machine",
-        "gui.add_files": "add files…",
-        "gui.add_dir": "add folder…",
+        "gui.add_files": "add files...",
+        "gui.add_dir": "add folder...",
         "gui.tip_remove": "remove selected rows from the list",
         "gui.tip_clear": "clear the whole list",
         "gui.tip_add_files": "add one or more .pk3 files",
@@ -186,7 +194,7 @@ _merge(
         "gui.run": "run",
         "gui.stop": "stop",
         "gui.clear_log": "clear log",
-        "gui.running": "running…",
+        "gui.running": "running...",
         "gui.done_ok": "finished in {t} (code {code})",
         "gui.done_err": "failed in {t} (code {code})",
         "gui.stopped": "stopped",
@@ -210,9 +218,9 @@ _merge(
         "gui.opt.verbose": "detailed log: show more of what the tool does",
         "gui.opt.show_skipped": "in the log, print every skipped pack by name",
         "gui.opt.time_stages": "at the end, show how long each stage took",
-        "gui.opt.no_aas_optimize": "AAS: skip bspc -optimize (faster; larger .aas files)",
-        "gui.opt.aas_geometry_fast": "AAS: faster/coarser bspc (same as --aas-geometry-fast)",
-        "gui.opt.aas_bspc_breadthfirst": "AAS: bspc breadth-first BSP order (try if stuck on huge maps)",
+        "gui.opt.no_aas_optimize": "aas: skip bspc -optimize (faster; larger .aas files)",
+        "gui.opt.aas_geometry_fast": "aas: faster/coarser bspc (same as --aas-geometry-fast)",
+        "gui.opt.aas_bspc_breadthfirst": "aas: bspc breadth-first bsp order (try if stuck on huge maps)",
         "gui.opt.bsp_patch": "map patch mode (try 2 only if something looks wrong)",
         "gui.num.coworkers": "how many packs to work on at once",
         "gui.num.pool_max": "thread pool cap (leave default unless you know why)",
@@ -226,15 +234,58 @@ _merge(
         "gui.path.ql_pak": "original quake live pak00.pk3",
         "gui.extra_log": "also write the session log to a file",
         "gui.placeholder_auto": "auto",
-        "gui.log_path_ph": "optional path for a log file…",
+        "gui.log_path_ph": "optional path for a log file...",
         "gui.credit": "by q3unite.su",
         "gui.reset": "reset settings",
         "gui.section_activity": "activity",
         "gui.elapsed": "elapsed {t}",
-        "gui.progress_starting": "starting…",
+        "gui.progress_starting": "starting...",
         "gui.progress_packs": "pack {cur} of {total}: {name}",
         "gui.progress_action": "action: {action}",
-        "gui.phase_deferred": "deferred bot-path phase ({n} map(s) queued)…",
+        "gui.phase_deferred": "deferred bot-path phase ({n} map(s) queued)...",
+        "gui.out_pick_title": "choose output folder",
+        "gui.out_not_dir_title": "invalid output path",
+        "gui.out_not_dir_msg": "path exists but is not a folder:\n{path}\n\nchoose another output folder.",
+        "gui.out_missing_title": "output folder not found",
+        "gui.out_missing_msg": "output folder does not exist:\n{path}\n\ncreate it?",
+        "gui.out_mkdir_fail_title": "cannot create folder",
+        "gui.out_mkdir_fail_msg": "cannot create folder:\n{path}\n\n{error}\n\nchoose another output folder?",
+        "gui.out_nowrite_title": "no write access",
+        "gui.out_nowrite_msg": "no write access to folder:\n{path}\n\n{error}\n\nchoose another output folder?",
+        "gui.out_canceled": "process canceled by user.",
+        "gui.out_retry_hint": "choose another output folder and run again.",
+        "gui.ws_id_invalid": "enter a valid workshop id or steam link.",
+        "gui.col_id_invalid": "enter a valid collection id or steam link.",
+        "gui.tmp_found_title": "temporary folders found",
+        "gui.tmp_found_msg": "found {n} temporary qltoq3 folder(s) from previous runs.\n\ndelete them now?",
+        "gui.tmp_removed": "temporary folders deleted: {n}.",
+        "gui.tmp_kept": "temporary folders kept.",
+        "gui.tmp_remove_failed": "could not delete {n} temporary folder(s).",
+        "gui.opt.check_updates_on_start": "check for updates on startup",
+        "gui.opt.auto_download_update": "try to download updates automatically",
+        "gui.header_updates": "updates",
+        "gui.update_check_now": "check updates now",
+        "gui.update_current_version": "current: {version}",
+        "gui.update_latest_version": "latest: {version}",
+        "gui.update_checking": "checking for updates...",
+        "gui.update_check_failed": "update check failed.",
+        "gui.update_none": "you already have the latest version.",
+        "gui.update_title": "update available",
+        "gui.update_available_msg": "a new version is available.\n\ncurrent: {current}\nlatest: {latest}\n\nopen download page?",
+        "gui.update_available_status": "update available: {latest}",
+        "gui.update_auto_installed_only": "auto update works only for installed app.",
+        "gui.update_download_failed": "cannot download update.",
+        "gui.update_integrity_missing": "update integrity file not found.",
+        "gui.update_integrity_failed": "update file hash check failed.",
+        "gui.update_deferred": "update {latest} is ready. install will start after conversion.",
+        "gui.update_silent_start": "installing update {latest}...",
+        "gui.update_run_failed": "cannot start installer: {error}",
+        "tmp.found": "found {n} stale qltoq3 temp folder(s).",
+        "tmp.ask_remove": "delete them now? [y/N]: ",
+        "tmp.removed": "deleted stale temp folders: {n}.",
+        "tmp.kept": "kept stale temp folders.",
+        "tmp.noninteractive_skip": "stale temp folders found ({n}); non-interactive mode, keeping them.",
+        "tmp.remove_failed": "failed to delete stale temp folder(s): {n}.",
     },
 )
 
@@ -332,10 +383,10 @@ _merge(
         "stats.pak00_integrity": "целостность pak00",
         "stats.pak00_bad": "sha-256 не совпадает с эталоном (возможно не оригинальный ql pak00)",
         "stats.done": "готово за {t}",
-        "stats.hint_all_q3_compat": "Ничего не записано: часть pk3 пропущена как «уже как Q3». Для конвертации укажите --force.",
-        "stats.hint_skip_mapless": "Ничего не записано: часть pk3 пропущена из-за --skip-mapless (в архиве не найден .bsp). Уберите --skip-mapless или добавьте --force.",
-        "stats.hint_failures": "Один или несколько pk3 завершились с ошибкой (строки выше). Полный стек: --verbose.",
-        "stats.hint_nothing_written": "Ничего не записано (нет успешных конвертаций). Если ожидался вывод - смотрите ошибки выше и пути.",
+        "stats.hint_all_q3_compat": "ничего не записано: часть pk3 пропущена как \"уже как q3\". для конвертации укажите --force.",
+        "stats.hint_skip_mapless": "ничего не записано: часть pk3 пропущена из-за --skip-mapless (в архиве не найден .bsp). уберите --skip-mapless или добавьте --force.",
+        "stats.hint_failures": "один или несколько pk3 завершились с ошибкой (строки выше). полный стек: --verbose.",
+        "stats.hint_nothing_written": "ничего не записано (нет успешных конвертаций). если ожидался вывод - смотрите ошибки выше и пути.",
         "dry.title": "пробный прогон - ничего не записано",
         "dry.out": "вывод:",
         "dry.q3_compat": "q3-совместим:",
@@ -395,8 +446,8 @@ _merge(
         "gui.out_folder": "папка вывода (сюда попадут сконвертированные pk3)",
         "gui.browse": "...",
         "gui.pk3_sources": "pk3 и папки на этом компьютере",
-        "gui.add_files": "добавить файлы…",
-        "gui.add_dir": "добавить папку…",
+        "gui.add_files": "добавить файлы...",
+        "gui.add_dir": "добавить папку...",
         "gui.tip_remove": "удалить выбранные строки из списка",
         "gui.tip_clear": "очистить весь список",
         "gui.tip_add_files": "добавить один или несколько .pk3",
@@ -407,7 +458,7 @@ _merge(
         "gui.run": "запуск",
         "gui.stop": "стоп",
         "gui.clear_log": "очистить лог",
-        "gui.running": "выполняется…",
+        "gui.running": "выполняется...",
         "gui.done_ok": "готово за {t} (код {code})",
         "gui.done_err": "ошибка за {t} (код {code})",
         "gui.stopped": "остановлено",
@@ -431,9 +482,9 @@ _merge(
         "gui.opt.verbose": "подробный лог: больше сообщений о ходе работы",
         "gui.opt.show_skipped": "в логе перечислять каждый пропущенный пак по имени",
         "gui.opt.time_stages": "в конце показать, сколько занял каждый этап",
-        "gui.opt.no_aas_optimize": "AAS: без bspc -optimize (быстрее; больше .aas)",
-        "gui.opt.aas_geometry_fast": "AAS: быстрее/грубее bspc (как --aas-geometry-fast)",
-        "gui.opt.aas_bspc_breadthfirst": "AAS: bspc breadth-first (если зависает на огромных картах)",
+        "gui.opt.no_aas_optimize": "aas: без bspc -optimize (быстрее; больше .aas)",
+        "gui.opt.aas_geometry_fast": "aas: быстрее/грубее bspc (как --aas-geometry-fast)",
+        "gui.opt.aas_bspc_breadthfirst": "aas: bspc breadth-first (если зависает на огромных картах)",
         "gui.opt.bsp_patch": "метод конверсии карт (1 - костыльный, 2 - долгий)",
         "gui.num.coworkers": "сколько паков обрабатывать одновременно",
         "gui.num.pool_max": "максимум потоков",
@@ -447,22 +498,142 @@ _merge(
         "gui.path.ql_pak": "оригинальный pak00.pk3 из quake live",
         "gui.extra_log": "дополнительно писать лог сессии в файл",
         "gui.placeholder_auto": "авто",
-        "gui.log_path_ph": "необязательный путь к файлу лога…",
+        "gui.log_path_ph": "необязательный путь к файлу лога...",
         "gui.credit": "by q3unite.su",
         "gui.reset": "сбросить настройки",
         "gui.section_activity": "ход работы",
         "gui.elapsed": "прошло {t}",
-        "gui.progress_starting": "запуск…",
+        "gui.progress_starting": "запуск...",
         "gui.progress_packs": "пак {cur} из {total}: {name}",
         "gui.progress_action": "операция: {action}",
-        "gui.phase_deferred": "отложенная фаза bot-path ({n} карт в очереди)…",
+        "gui.phase_deferred": "отложенная фаза bot-path ({n} карт в очереди)...",
+        "gui.out_pick_title": "выбор папки вывода",
+        "gui.out_not_dir_title": "некорректный путь вывода",
+        "gui.out_not_dir_msg": "путь существует, но это не папка:\n{path}\n\nвыберите другую папку вывода.",
+        "gui.out_missing_title": "папка вывода не найдена",
+        "gui.out_missing_msg": "папка вывода не существует:\n{path}\n\nсоздать её?",
+        "gui.out_mkdir_fail_title": "не удалось создать папку",
+        "gui.out_mkdir_fail_msg": "не удалось создать папку:\n{path}\n\n{error}\n\nвыбрать другую папку вывода?",
+        "gui.out_nowrite_title": "нет прав на запись",
+        "gui.out_nowrite_msg": "нет прав на запись в папку:\n{path}\n\n{error}\n\nвыбрать другую папку вывода?",
+        "gui.out_canceled": "процесс отменен пользователем.",
+        "gui.out_retry_hint": "выберите другую папку вывода и запустите снова.",
+        "gui.ws_id_invalid": "введите корректный id предмета или ссылку steam.",
+        "gui.col_id_invalid": "введите корректный id коллекции или ссылку steam.",
+        "gui.tmp_found_title": "найдены временные папки",
+        "gui.tmp_found_msg": "найдены временные папки qltoq3 от прошлых запусков: {n}.\n\nудалить сейчас?",
+        "gui.tmp_removed": "временные папки удалены: {n}.",
+        "gui.tmp_kept": "временные папки оставлены.",
+        "gui.tmp_remove_failed": "не удалось удалить временные папки: {n}.",
+        "gui.opt.check_updates_on_start": "проверять обновления при запуске",
+        "gui.opt.auto_download_update": "пытаться скачивать обновления автоматически",
+        "gui.header_updates": "обновления",
+        "gui.update_check_now": "проверить обновления сейчас",
+        "gui.update_current_version": "текущая: {version}",
+        "gui.update_latest_version": "доступная: {version}",
+        "gui.update_checking": "проверка обновлений...",
+        "gui.update_check_failed": "не удалось проверить обновления.",
+        "gui.update_none": "у вас уже последняя версия.",
+        "gui.update_title": "доступно обновление",
+        "gui.update_available_msg": "доступна новая версия.\n\nтекущая: {current}\nновая: {latest}\n\nоткрыть страницу скачивания?",
+        "gui.update_available_status": "доступно обновление: {latest}",
+        "gui.update_auto_installed_only": "автообновление работает только для установленной версии.",
+        "gui.update_download_failed": "не удалось скачать обновление.",
+        "gui.update_integrity_missing": "не найден файл проверки целостности обновления.",
+        "gui.update_integrity_failed": "проверка хэша файла обновления не пройдена.",
+        "gui.update_deferred": "обновление {latest} готово. установка начнется после конвертации.",
+        "gui.update_silent_start": "установка обновления {latest}...",
+        "gui.update_run_failed": "не удалось запустить установщик: {error}",
+        "tmp.found": "найдены временные папки qltoq3 от прошлых запусков: {n}.",
+        "tmp.ask_remove": "удалить их сейчас? [y/N]: ",
+        "tmp.removed": "временные папки удалены: {n}.",
+        "tmp.kept": "временные папки оставлены.",
+        "tmp.noninteractive_skip": "найдены временные папки ({n}); неинтерактивный режим, папки оставлены.",
+        "tmp.remove_failed": "не удалось удалить временные папки: {n}.",
     },
 )
 
 
+def _candidate_locales_dirs() -> list[Path]:
+    out: list[Path] = []
+    env_dir = (os.environ.get("QLTOQ3_LOCALES_DIR") or "").strip()
+    if env_dir:
+        out.append(Path(env_dir).expanduser())
+    if getattr(sys, "frozen", False):
+        out.append(Path(sys.executable).resolve().parent / "locales")
+    out.append(Path(__file__).resolve().parents[1] / "locales")
+    dedup: list[Path] = []
+    seen: set[str] = set()
+    for p in out:
+        k = str(p.resolve()) if p.exists() else str(p)
+        if k in seen:
+            continue
+        seen.add(k)
+        dedup.append(p)
+    return dedup
+
+
+def _flatten_locale_dict(d: dict[str, object]) -> dict[str, str]:
+    if "strings" in d and isinstance(d["strings"], dict):
+        d = d["strings"]  # type: ignore[assignment]
+    out: dict[str, str] = {}
+    for k, v in d.items():
+        if isinstance(k, str) and isinstance(v, str):
+            out[k] = v
+    return out
+
+
+def _load_external_locales() -> None:
+    for lang in ("en", "ru"):
+        for base in _candidate_locales_dirs():
+            fp = base / f"{lang}.toml"
+            if not fp.is_file():
+                continue
+            try:
+                raw = tomllib.loads(fp.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(raw, dict):
+                continue
+            ext = _flatten_locale_dict(raw)
+            if ext:
+                _merge(lang, ext)
+
+
+_load_external_locales()
+
+
+def _prefs_file() -> Path:
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        return Path(base) / "qltoq3" / "prefs.json"
+    return Path.home() / ".config" / "qltoq3" / "prefs.json"
+
+
+def _lang_from_prefs() -> str | None:
+    fp = _prefs_file()
+    if not fp.is_file():
+        return None
+    try:
+        raw = json.loads(fp.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(raw, dict):
+        return None
+    lang = str(raw.get("lang", "")).strip().lower()
+    if lang in ("en", "ru"):
+        return lang
+    return None
+
+
 def default_lang_from_env() -> str:
-    v = (os.environ.get("QLTOQ3_LANG") or os.environ.get("LANG") or "en").strip()
-    v = v.lower().replace("_", "-")
+    direct = (os.environ.get("QLTOQ3_LANG") or "").strip().lower()
+    if direct in ("en", "ru"):
+        return direct
+    pref = _lang_from_prefs()
+    if pref is not None:
+        return pref
+    v = (os.environ.get("LANG") or "en").strip().lower().replace("_", "-")
     if v.startswith("ru"):
         return "ru"
     return "en"
