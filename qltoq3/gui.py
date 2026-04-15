@@ -60,6 +60,7 @@ _ICO_PLAY = "\ue768"
 _ICO_PLUS = "\ue710"
 _ICO_FOLDER = "\ue8b7"
 _ICO_STOP = "\ue71a"
+_ICO_OPEN = "\ue8a7"
 
 _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 _SPINNER_MS = 90
@@ -712,12 +713,13 @@ class QlToQ3App(ctk.CTk):
         _bind_tip(self._btn_out, lambda: tr("gui.tip_browse_out"))
         self._btn_out_open = ctk.CTkButton(
             out_inner,
-            text=tr("gui.open_output"),
+            text=_ICO_OPEN if self._f_ico_small else "↗",
             command=self._open_output_dir,
             fg_color=BTN_GRAY,
             hover_color=BTN_GRAY_HOVER,
+            font=self._f_ico_small,
             height=32,
-            width=110,
+            width=40,
         )
         self._btn_out_open.pack(side="right", padx=(0, 8))
         _bind_tip(self._btn_out_open, lambda: tr("gui.open_output"))
@@ -1295,7 +1297,10 @@ class QlToQ3App(ctk.CTk):
             text=_ICO_PLUS if self._f_ico_small else tr("gui.add")
         )
         self._refresh_browse_btns()
-        self._btn_out_open.configure(text=tr("gui.open_output"))
+        self._btn_out_open.configure(
+            text=_ICO_OPEN if self._f_ico_small else "↗",
+            font=self._f_ico_small,
+        )
         self._listbox_empty.configure(text=tr("gui.local_drop_hint"))
         self._btn_stop.configure(text=_ICO_STOP if self._f_ico_btn else tr("gui.stop"))
         self._btn_log_copy.configure(text=tr("gui.copy_log"))
