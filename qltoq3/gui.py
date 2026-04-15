@@ -1458,9 +1458,11 @@ class QlToQ3App(ctk.CTk):
         )
         auto_cb = self._chk.get("auto_download_update")
         auto_enabled = bool(auto_cb and auto_cb[0].get() == 1)
-        if auto_enabled:
-            self._auto_update_flow(info)
-            return
+        # Manual check should also prepare the installer so "install now"
+        # becomes available without restarting the app.
+        if auto_enabled or manual:
+            if self._auto_update_flow(info):
+                return
         self._notify_update_available(info)
 
     def _notify_update_available(self, info: ReleaseInfo) -> None:
@@ -1475,24 +1477,25 @@ class QlToQ3App(ctk.CTk):
         if open_now:
             webbrowser.open(info.asset_url or info.html_url)
 
-    def _auto_update_flow(self, info: ReleaseInfo) -> None:
+    def _auto_update_flow(self, info: ReleaseInfo) -> bool:
         if not self._installed_mode:
             self._status.configure(
                 text=tr("gui.update_auto_installed_only"),
                 text_color="#aaaaaa",
             )
-            return
+            return False
         if not info.asset_url or not info.asset_name or not info.sha256_url:
             self._status.configure(
                 text=tr("gui.update_integrity_missing"),
                 text_color="#ff5555",
             )
-            return
+            return False
         threading.Thread(
             target=self._download_and_stage_update,
             args=(info,),
             daemon=True,
         ).start()
+        return True
 
     def _download_and_stage_update(self, info: ReleaseInfo) -> None:
         installer_path = Path(tempfile.gettempdir()) / info.asset_name
