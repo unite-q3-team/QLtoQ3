@@ -116,6 +116,8 @@
 "gui.out_pick_title" = "выбор папки вывода"
 "gui.out_retry_hint" = "выберите другую папку вывода и запустите снова."
 "gui.path.bspc" = "компилятор карт (bspc.exe)"
+"gui.dep_hint_ffmpeg" = "ffmpeg: https://ffmpeg.org/download.html#build-windows"
+"gui.dep_hint_steamcmd" = "steamcmd: https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip"
 "gui.path.ffmpeg" = "ffmpeg (перегон звуков в wav)"
 "gui.path.levelshot" = "левелшот по умолчанию"
 "gui.path.ql_pak" = "оригинальный pak00.pk3 из quake live"

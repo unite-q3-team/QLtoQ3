@@ -86,6 +86,10 @@ CHK_DEF: list[tuple[str, str]] = [
 ]
 
 _TOOL_STATUS_DEBOUNCE_MS = 320
+_TOOL_DOWNLOAD_URLS = {
+    "steamcmd": "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip",
+    "ffmpeg": "https://ffmpeg.org/download.html#build-windows",
+}
 
 
 def split_tokens(s: str) -> list[str]:
@@ -164,6 +168,19 @@ def build_cli_cmd(argv: list[str]) -> list[str]:
         if cli_exe.is_file():
             return [str(cli_exe)] + argv
     return [sys.executable, "-u", "-m", "qltoq3.cli"] + argv
+
+
+def _runtime_root_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(repo_root()).resolve()
+
+
+def _runtime_bundled_dir(runtime_root: Path) -> Path:
+    bundled = runtime_root / "bundled"
+    if bundled.is_dir():
+        return bundled
+    return Path(bundled_dir()).resolve()
 
 
 def _gui_state_file() -> Path:
@@ -359,9 +376,10 @@ class QlToQ3App(ctk.CTk):
         super().__init__()
         self._dim_after_id: str | None = None
         self._last_dim: tuple[int, int] = (0, 0)
-        bd = bundled_dir()
+        self._runtime_root = _runtime_root_dir()
+        bd = str(_runtime_bundled_dir(self._runtime_root))
         _apply_qltoq3_window_icon(self, bd)
-        root = repo_root()
+        root = str(self._runtime_root)
         self._bd = bd
         self._repo_root = root
         self._running = False
@@ -1039,6 +1057,27 @@ class QlToQ3App(ctk.CTk):
         ]
         for nk, lk, default in tool_fields:
             self._mk_label(sc, lk).pack(anchor="w", pady=(15, 5))
+            if nk in _TOOL_DOWNLOAD_URLS:
+                hint_key = (
+                    "gui.dep_hint_steamcmd"
+                    if nk == "steamcmd"
+                    else "gui.dep_hint_ffmpeg"
+                )
+                url = _TOOL_DOWNLOAD_URLS[nk]
+                hint = ctk.CTkLabel(
+                    sc,
+                    text=tr(hint_key),
+                    text_color=ACCENT,
+                    cursor="hand2",
+                    font=ctk.CTkFont(size=11),
+                )
+                hint.pack(anchor="w", pady=(0, 4))
+                self._lang_labels.append((hint, hint_key))
+                hint.bind("<Button-1>", lambda _e, link=url: webbrowser.open(link))
+                hint.bind(
+                    "<Enter>", lambda _e, w=hint: w.configure(text_color=ACCENT_HOVER)
+                )
+                hint.bind("<Leave>", lambda _e, w=hint: w.configure(text_color=ACCENT))
             row = ctk.CTkFrame(sc, fg_color="transparent")
             row.pack(fill="x", pady=(0, 8), padx=(0, 10))
             e = ctk.CTkEntry(row, fg_color=LIST_BG, height=32)
@@ -1746,6 +1785,7 @@ class QlToQ3App(ctk.CTk):
 
     def _apply_state(self, raw: dict[str, Any]) -> None:
         m = _merge_gui_state(raw, self._bd, self._repo_root)
+        defaults = default_gui_state(self._bd, self._repo_root)
         lg = m["lang"]
         self._lang_combo.set(lg)
         set_lang(lg)
@@ -1783,8 +1823,11 @@ class QlToQ3App(ctk.CTk):
         self._aas_threads.delete(0, "end")
         self._aas_threads.insert(0, str(m.get("aas_threads", "")).strip())
         for nk in ("bspc", "levelshot", "steamcmd", "ffmpeg", "ql_pak"):
+            val = str(m.get(nk, ""))
+            if "_MEI" in val and not Path(val).exists():
+                val = str(defaults.get(nk, val))
             self._path[nk].delete(0, "end")
-            self._path[nk].insert(0, str(m.get(nk, "")))
+            self._path[nk].insert(0, val)
         self._refresh_all_tool_path_status()
         self._log_path.delete(0, "end")
         self._log_path.insert(0, str(m.get("log", "")).strip())

@@ -116,6 +116,8 @@
 "gui.out_pick_title" = "choose output folder"
 "gui.out_retry_hint" = "choose another output folder and run again."
 "gui.path.bspc" = "map compiler (bspc.exe)"
+"gui.dep_hint_ffmpeg" = "ffmpeg: https://ffmpeg.org/download.html#build-windows"
+"gui.dep_hint_steamcmd" = "steamcmd: https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip"
 "gui.path.ffmpeg" = "ffmpeg (turns game sounds into wav)"
 "gui.path.levelshot" = "default loading screen image"
 "gui.path.ql_pak" = "original quake live pak00.pk3"
