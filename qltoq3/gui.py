@@ -1058,6 +1058,7 @@ class QlToQ3App(ctk.CTk):
 
     def _setup_updates(self) -> None:
         self.updates_frame.grid_columnconfigure(0, weight=1)
+        self.updates_frame.grid_rowconfigure(0, weight=1)
         sc = ctk.CTkScrollableFrame(
             self.updates_frame, fg_color="transparent", corner_radius=0
         )
