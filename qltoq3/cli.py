@@ -150,6 +150,7 @@ def convert_one(
 
     starttime = time.perf_counter()
     tmpdir = pk3.extract_pk3(path)
+    current_phase = "extract"
     try:
         maps: list[str] = []
         for root, _, files in os.walk(tmpdir):
@@ -193,6 +194,7 @@ def convert_one(
         ) = pk3.scan_map_tree(tmpdir, None)
 
         _report_action("pk3.patch_bsps")
+        current_phase = "patch_bsps"
         _phase_start("BSP")
         patched_names, bsp_deps = bsp.patch_all_bsps(
             tmpdir, method=args.bsp_patch_method
@@ -200,11 +202,13 @@ def convert_one(
         _phase_done()
 
         _report_action("pk3.shaders")
+        current_phase = "shaders"
         _phase_start("shaders")
         shaders.fix_all_shaders(tmpdir)
         _phase_done()
 
         _report_action("pk3.models")
+        current_phase = "models"
         _phase_start("models")
         media.fix_all_models(tmpdir)
         _phase_done()
@@ -213,16 +217,19 @@ def convert_one(
         all_used.extend(pk3.extend_used_from_shaders_md3(shader_files, model_files))
 
         _report_action("pk3.images")
+        current_phase = "images"
         _phase_start("images")
         img_count = media.convert_all_images(tmpdir, optimize=args.optimize)
         _phase_done()
 
         _report_action("pk3.sounds")
+        current_phase = "sounds"
         _phase_start("sound")
         snd_count = media.convert_all_ogg_to_wav(tmpdir, ffmpeg_bin=args.ffmpeg)
         _phase_done()
 
         _report_action("pk3.restore")
+        current_phase = "restore"
         _phase_start("restore")
         restored = 0
         extra_img = 0
@@ -251,6 +258,7 @@ def convert_one(
         _phase_start("AAS")
         if not args.no_aas and maps:
             _report_action("aas.global")
+            current_phase = "aas"
             for m_path in maps:
                 mn = os.path.splitext(os.path.basename(m_path))[0]
                 thr = (
@@ -277,6 +285,7 @@ def convert_one(
         _phase_done()
 
         _report_action("pk3.repack")
+        current_phase = "repack"
         _phase_start("repack")
         pk3.repack_pk3(tmpdir, out_path)
         _phase_done()
@@ -291,6 +300,9 @@ def convert_one(
             stats["images"] += img_count
             stats["sounds"] += snd_count
             stats["restored"] += restored
+    except Exception as e:
+        setattr(e, "_qltoq3_phase", current_phase)
+        raise
 
     finally:
         if inner is not None:
@@ -475,9 +487,16 @@ def main() -> None:
                     except Exception as e:
                         with stats_lock:
                             stats["failed"] += 1
+                        phase = str(getattr(e, "_qltoq3_phase", "")).strip()
+                        phase_info = f" [phase={phase}]" if phase else ""
+                        missing = ""
+                        if isinstance(e, FileNotFoundError):
+                            missing_path = getattr(e, "filename", None)
+                            if missing_path:
+                                missing = f" (missing: {missing_path})"
                         tqdm.write(
-                            f"{Colors.RED}{os.path.basename(src)}: "
-                            f"{type(e).__name__}: {e}{Colors.ENDC}"
+                            f"{Colors.RED}{os.path.basename(src)}{phase_info}: "
+                            f"{type(e).__name__}: {e}{missing}{Colors.ENDC}"
                         )
                         if args.verbose:
                             traceback.print_exc()

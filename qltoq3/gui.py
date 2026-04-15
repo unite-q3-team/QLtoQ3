@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ctypes
-import json
 import os
 import re
 import subprocess
@@ -21,11 +20,17 @@ from typing import Any, Callable
 import customtkinter as ctk
 
 from .cli_parse import extract_steam_id
-from .colors import strip_ansi
+from .config import (
+    default_gui_state,
+    load_gui_state,
+    merge_gui_state,
+    save_gui_state,
+)
 from .constants import bundled_dir, repo_root
 from . import __version__
 from .l10n import default_lang_from_env, set_lang, tr
 from .progress import format_elapsed as _format_elapsed_sec
+from .runner import WorkerThread, build_argv, build_cli_cmd
 from .tempdirs import find_stale_temp_dirs, remove_temp_dirs
 from .updater import (
     ReleaseInfo,
@@ -65,10 +70,6 @@ _ICO_OPEN = "\ue8a7"
 _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 _SPINNER_MS = 90
 
-_PROGRESS_RE = re.compile(r"^QLTOQ3_PROGRESS\s+(\d+)/(\d+)(?:\s+(.*))?\s*$")
-_PHASE_RE = re.compile(r"^QLTOQ3_PHASE\s+(\S+)\s+(\d+)\s*$")
-_ACTION_RE = re.compile(r"^QLTOQ3_ACTION\s+(.*)\s*$")
-
 CHK_DEF: list[tuple[str, str]] = [
     ("yes_always", "gui.opt.yes_always"),
     ("force", "gui.opt.force"),
@@ -96,80 +97,6 @@ def split_tokens(s: str) -> list[str]:
     return [t for t in re.split(r"[\s,]+", (s or "").strip()) if t]
 
 
-def build_argv(state: dict[str, Any]) -> list[str]:
-    argv: list[str] = [
-        "--no-color",
-        "--lang",
-        state["lang"],
-        "--output",
-        state["output"],
-    ]
-    argv.extend(["--aas-timeout", str(int(state["aas_timeout"]))])
-    argv.extend(["--coworkers", str(int(state["coworkers"]))])
-    argv.extend(["--pool-max", str(int(state["pool_max"]))])
-    argv.extend(["--bspc-concurrent", str(int(state["bspc_concurrent"]))])
-    argv.extend(["--bsp-patch-method", str(int(state["bsp_patch_method"]))])
-    at = (state.get("aas_threads") or "").strip()
-    if at:
-        argv.extend(["--aas-threads", str(int(at))])
-    argv.extend(["--bspc", state["bspc"]])
-    argv.extend(["--levelshot", state["levelshot"]])
-    argv.extend(["--steamcmd", state["steamcmd"]])
-    argv.extend(["--ffmpeg", state["ffmpeg"]])
-    argv.extend(["--ql-pak", state["ql_pak"]])
-    if state.get("yes_always"):
-        argv.append("--yes-always")
-    if state.get("force"):
-        argv.append("--force")
-    if state.get("no_aas"):
-        argv.append("--no-aas")
-    if state.get("optimize"):
-        argv.append("--optimize")
-    if state.get("dry_run"):
-        argv.append("--dry-run")
-    if state.get("hide_converted"):
-        argv.append("--hide-converted")
-    if state.get("skip_mapless"):
-        argv.append("--skip-mapless")
-    if state.get("verbose"):
-        argv.append("--verbose")
-    if state.get("show_skipped"):
-        argv.append("--show-skipped")
-    if state.get("time_stages"):
-        argv.append("--time-stages")
-    if state.get("no_aas_optimize"):
-        argv.append("--no-aas-optimize")
-    if state.get("aas_geometry_fast"):
-        argv.append("--aas-geometry-fast")
-    if state.get("aas_bspc_breadthfirst"):
-        argv.append("--aas-bspc-breadthfirst")
-    ws = state.get("workshop_list", [])
-    if ws:
-        argv.append("--workshop")
-        argv.extend(ws)
-    col_ids = state.get("collection_list", [])
-    if col_ids:
-        argv.append("--collection")
-        argv.extend(col_ids)
-    log_p = (state.get("log") or "").strip()
-    if log_p:
-        argv.extend(["--log", log_p])
-    pos: list[str] = list(state.get("paths") or [])
-    argv.extend(pos)
-    argv.append("--no-progress")
-    return argv
-
-
-def build_cli_cmd(argv: list[str]) -> list[str]:
-    if getattr(sys, "frozen", False):
-        exe_dir = Path(sys.executable).resolve().parent
-        cli_name = "qltoq3-cli.exe" if sys.platform == "win32" else "qltoq3-cli"
-        cli_exe = exe_dir / cli_name
-        if cli_exe.is_file():
-            return [str(cli_exe)] + argv
-    return [sys.executable, "-u", "-m", "qltoq3.cli"] + argv
-
-
 def _runtime_root_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
@@ -183,13 +110,6 @@ def _runtime_bundled_dir(runtime_root: Path) -> Path:
     return Path(bundled_dir()).resolve()
 
 
-def _gui_state_file() -> Path:
-    if sys.platform == "win32":
-        base = os.environ.get("APPDATA") or os.path.expanduser("~")
-        return Path(base) / "qltoq3" / "gui_state.json"
-    return Path.home() / ".config" / "qltoq3" / "gui_state.json"
-
-
 def _safe_int(v: Any, default: int) -> int:
     try:
         return int(v)
@@ -201,66 +121,6 @@ def _as_str_list(v: Any) -> list[str]:
     if not isinstance(v, list):
         return []
     return [str(x) for x in v]
-
-
-def default_gui_state(bd: str, root: str) -> dict[str, Any]:
-    lg = default_lang_from_env()
-    if lg not in ("en", "ru"):
-        lg = "en"
-    return {
-        "version": 1,
-        "lang": lg,
-        "input_mode": "local",
-        "output": "q3",
-        "paths": [],
-        "workshop_list": [],
-        "collection_list": [],
-        "yes_always": False,
-        "force": False,
-        "no_aas": False,
-        "optimize": False,
-        "dry_run": False,
-        "hide_converted": False,
-        "skip_mapless": False,
-        "verbose": False,
-        "show_skipped": False,
-        "time_stages": False,
-        "check_updates_on_start": True,
-        "auto_download_update": False,
-        "latest_known_version": "",
-        "no_aas_optimize": False,
-        "aas_geometry_fast": False,
-        "aas_bspc_breadthfirst": False,
-        "aas_timeout": 90,
-        "coworkers": 3,
-        "pool_max": 96,
-        "bspc_concurrent": 1,
-        "bsp_patch_method": 1,
-        "aas_threads": "",
-        "bspc": os.path.join(bd, "bspc.exe"),
-        "levelshot": os.path.join(bd, "levelshot.png"),
-        "steamcmd": r"c:\steamcmd\steamcmd.exe",
-        "ffmpeg": "ffmpeg",
-        "ql_pak": os.path.join(root, "ql_baseq3", "pak00.pk3"),
-        "log": "",
-    }
-
-
-def _merge_gui_state(raw: dict[str, Any], bd: str, root: str) -> dict[str, Any]:
-    base = default_gui_state(bd, root)
-    base.update(raw)
-    if base.get("lang") not in ("en", "ru"):
-        base["lang"] = default_gui_state(bd, root)["lang"]
-    im = base.get("input_mode")
-    if im not in ("local", "steam"):
-        base["input_mode"] = "local"
-    return base
-
-
-def _popen_creationflags() -> int:
-    if sys.platform == "win32":
-        return getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    return 0
 
 
 def _ico_font(size: int = 16) -> ctk.CTkFont | None:
@@ -385,6 +245,7 @@ class QlToQ3App(ctk.CTk):
         self._running = False
         self._user_stopped = False
         self._proc: subprocess.Popen[str] | None = None
+        self._worker: WorkerThread | None = None
         self._spinner_after_id: str | None = None
         self._spinner_idx = 0
         self._run_started_t: float | None = None
@@ -1769,22 +1630,19 @@ class QlToQ3App(ctk.CTk):
         }
 
     def _save_state(self) -> None:
-        path = _gui_state_file()
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
             st = self._state()
             del st["_has_inputs"]
             st["input_mode"] = (
                 "steam" if self._in_mode.get() == tr("gui.mode_steam") else "local"
             )
             st["version"] = 1
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(st, f, indent=2, ensure_ascii=False)
+            save_gui_state(st)
         except OSError:
             pass
 
     def _apply_state(self, raw: dict[str, Any]) -> None:
-        m = _merge_gui_state(raw, self._bd, self._repo_root)
+        m = merge_gui_state(raw, self._bd, self._repo_root)
         defaults = default_gui_state(self._bd, self._repo_root)
         lg = m["lang"]
         self._lang_combo.set(lg)
@@ -1842,12 +1700,8 @@ class QlToQ3App(ctk.CTk):
         self._refresh_latest_version_label()
 
     def _load_state(self) -> None:
-        path = _gui_state_file()
-        if not path.is_file():
-            return
         try:
-            with open(path, encoding="utf-8") as f:
-                raw = json.load(f)
+            raw = load_gui_state()
             if isinstance(raw, dict):
                 self._apply_state(raw)
         except Exception:
@@ -2036,77 +1890,36 @@ class QlToQ3App(ctk.CTk):
         self._lbl_progress_action.configure(text="")
         self._status.configure(text=tr("gui.running"), text_color="#aaaaaa")
         self._append_log_chunk(subprocess.list2cmdline(cmd) + "\n")
-        try:
-            child_env = os.environ.copy()
-            child_env["QLTOQ3_NONINTERACTIVE"] = "1"
-            self._proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-                cwd=os.getcwd(),
-                env=child_env,
-                creationflags=_popen_creationflags(),
-            )
-        except OSError as e:
-            self._running = False
-            self._btn_run.configure(state="normal")
-            self._btn_stop.configure(state="disabled")
-            self._progress.stop()
-            self._progress.set(0)
-            self._append_log_chunk(str(e) + "\n")
-            self._status.configure(text=str(e), text_color="#ff5555")
-            return
+        self._worker = WorkerThread(
+            cmd=cmd,
+            cwd=os.getcwd(),
+            on_started=lambda proc: self.after(0, self._on_worker_started, proc),
+            on_progress=lambda cur, total, name: self.after(
+                0, self._set_run_progress, cur, total, name
+            ),
+            on_phase=lambda kind, n: self.after(0, self._set_run_phase, kind, n),
+            on_action=lambda action: self.after(0, self._set_run_action, action),
+            on_log_line=lambda text: self.after(0, self._append_log_chunk, text),
+            on_done=lambda rc: self.after(0, self._finish_run, rc),
+            on_start_error=lambda err: self.after(0, self._on_worker_start_error, err),
+        )
+        self._worker.start()
+
+    def _on_worker_started(self, proc: subprocess.Popen[str]) -> None:
+        self._proc = proc
         self._spinner_start()
         self._elapsed_start()
 
-        def reader() -> None:
-            assert self._proc and self._proc.stdout
-            buf: list[str] = []
-
-            def flush_buf() -> None:
-                if not buf:
-                    return
-                text = "".join(buf)
-                buf.clear()
-                self.after(0, self._append_log_chunk, text)
-
-            for line in self._proc.stdout:
-                raw = line.rstrip("\r\n")
-                m = _PROGRESS_RE.match(raw)
-                if m:
-                    flush_buf()
-                    self.after(
-                        0,
-                        self._set_run_progress,
-                        int(m.group(1)),
-                        int(m.group(2)),
-                        m.group(3) if m.lastindex >= 3 else "",
-                    )
-                    continue
-                pm = _PHASE_RE.match(raw)
-                if pm:
-                    flush_buf()
-                    self.after(0, self._set_run_phase, pm.group(1), int(pm.group(2)))
-                    continue
-                am = _ACTION_RE.match(raw)
-                if am:
-                    flush_buf()
-                    self.after(0, self._set_run_action, am.group(1))
-                    continue
-                if not strip_ansi(raw).strip():
-                    continue
-                buf.append(line)
-                if len(buf) >= 32 or sum(len(x) for x in buf) > 12000:
-                    flush_buf()
-            flush_buf()
-            rc = self._proc.wait()
-            self.after(0, self._finish_run, rc)
-
-        threading.Thread(target=reader, daemon=True).start()
+    def _on_worker_start_error(self, message: str) -> None:
+        self._running = False
+        self._worker = None
+        self._proc = None
+        self._btn_run.configure(state="normal")
+        self._btn_stop.configure(state="disabled")
+        self._progress.stop()
+        self._progress.set(0)
+        self._append_log_chunk(message + "\n")
+        self._status.configure(text=message, text_color="#ff5555")
 
     def _finish_run(self, code: int) -> None:
         self._spinner_stop()
@@ -2122,6 +1935,7 @@ class QlToQ3App(ctk.CTk):
             elapsed_sec = time.perf_counter() - self._run_started_t
         self._elapsed_stop()
         self._running = False
+        self._worker = None
         self._proc = None
         self._progress.stop()
         self._progress.configure(mode="determinate")
@@ -2145,9 +1959,9 @@ class QlToQ3App(ctk.CTk):
                 text=tr("gui.done_err", code=code, t=td), text_color="#ff5555"
             )
     def _stop(self) -> None:
-        if self._proc and self._running:
+        if self._running and self._worker is not None:
             self._user_stopped = True
-            self._proc.terminate()
+            self._worker.terminate()
             if self._run_started_t is not None:
                 et = time.perf_counter() - self._run_started_t
                 msg = tr("gui.stopped_elapsed", t=_format_elapsed_sec(et))
@@ -2165,11 +1979,11 @@ class QlToQ3App(ctk.CTk):
         self._pending_update_installer = None
         self._pending_update_version = ""
         self._spinner_stop()
-        if self._proc and self._running:
+        if self._running and self._worker is not None:
             if self._run_started_t is not None:
                 self._stop_elapsed_snapshot = time.perf_counter() - self._run_started_t
             self._user_stopped = True
-            self._proc.terminate()
+            self._worker.terminate()
         self._elapsed_stop()
         self._refresh_update_install_button()
         tp = getattr(self, "_temp_ico_path", None)
