@@ -25,10 +25,10 @@ def version_tuple(v: str) -> tuple[int, ...]:
     s = (v or "").strip().lower()
     if s.startswith("v"):
         s = s[1:]
-    parts: list[int] = []
-    for chunk in s.split("."):
-        m = re.match(r"(\d+)", chunk)
-        parts.append(int(m.group(1)) if m else 0)
+    # Accept non-PEP440 tags like "0.1.2-fix1" from releases.
+    parts = [int(x) for x in re.findall(r"\d+", s)]
+    if not parts:
+        return (0, 0, 0)
     while len(parts) < 3:
         parts.append(0)
     return tuple(parts)
