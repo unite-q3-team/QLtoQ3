@@ -11,13 +11,23 @@ $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $ScriptRoot "..\..\"))
 $DistRoot = Join-Path $RepoRoot "dist\windows"
 $PyInstallerDist = Join-Path $DistRoot "pyinstaller"
 $PyInstallerWork = Join-Path $RepoRoot "build\windows\out\pyinstaller-work"
-$PyInstallerSpec = Join-Path $RepoRoot "build\windows\out\spec"
 $PortableRoot = Join-Path $DistRoot "portable\QLtoQ3"
 $PortableZipDir = Join-Path $DistRoot "portable"
 $InstallerOut = Join-Path $DistRoot "installer"
 $CliSpec = Join-Path $RepoRoot "build\windows\pyinstaller\cli.spec"
 $GuiSpec = Join-Path $RepoRoot "build\windows\pyinstaller\gui.spec"
 $InstallerScript = Join-Path $RepoRoot "build\windows\installer\qltoq3.iss"
+
+function Invoke-CheckedPython {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+    & python @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw ("Python command failed with exit code {0}: python {1}" -f $LASTEXITCODE, ($Arguments -join " "))
+    }
+}
 
 Push-Location $RepoRoot
 try {
@@ -28,31 +38,33 @@ try {
         throw "Unable to determine application version."
     }
 
-    foreach ($dir in @($PyInstallerDist, $PyInstallerWork, $PyInstallerSpec, $PortableRoot, $InstallerOut)) {
+    foreach ($dir in @($PyInstallerDist, $PyInstallerWork, $PortableRoot, $InstallerOut)) {
         if (Test-Path $dir) {
             Remove-Item $dir -Recurse -Force
         }
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
 
-    python -m pip install --upgrade pip
-    python -m pip install . pyinstaller
+    Invoke-CheckedPython -Arguments @("-m", "pip", "install", "--upgrade", "pip")
+    Invoke-CheckedPython -Arguments @("-m", "pip", "install", ".", "pyinstaller")
 
-    python -m PyInstaller `
-        --noconfirm `
-        --clean `
-        --distpath "$PyInstallerDist" `
-        --workpath "$PyInstallerWork" `
-        --specpath "$PyInstallerSpec" `
+    Invoke-CheckedPython -Arguments @(
+        "-m", "PyInstaller",
+        "--noconfirm",
+        "--clean",
+        "--distpath", "$PyInstallerDist",
+        "--workpath", "$PyInstallerWork",
         "$CliSpec"
+    )
 
-    python -m PyInstaller `
-        --noconfirm `
-        --clean `
-        --distpath "$PyInstallerDist" `
-        --workpath "$PyInstallerWork" `
-        --specpath "$PyInstallerSpec" `
+    Invoke-CheckedPython -Arguments @(
+        "-m", "PyInstaller",
+        "--noconfirm",
+        "--clean",
+        "--distpath", "$PyInstallerDist",
+        "--workpath", "$PyInstallerWork",
         "$GuiSpec"
+    )
 
     Copy-Item (Join-Path $PyInstallerDist "qltoq3-cli.exe") $PortableRoot -Force
     Copy-Item (Join-Path $PyInstallerDist "qltoq3-gui.exe") $PortableRoot -Force
@@ -83,6 +95,9 @@ try {
             "/DSourceDir=$PortableRoot" `
             "/DOutputDir=$InstallerOut" `
             "$InstallerScript"
+        if ($LASTEXITCODE -ne 0) {
+            throw ("inno setup compiler failed, code: {0}." -f $LASTEXITCODE)
+        }
     }
 
     Write-Host "build done"
