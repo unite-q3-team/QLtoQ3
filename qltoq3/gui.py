@@ -141,6 +141,16 @@ def build_argv(state: dict[str, Any]) -> list[str]:
     return argv
 
 
+def build_cli_cmd(argv: list[str]) -> list[str]:
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        cli_name = "qltoq3-cli.exe" if sys.platform == "win32" else "qltoq3-cli"
+        cli_exe = exe_dir / cli_name
+        if cli_exe.is_file():
+            return [str(cli_exe)] + argv
+    return [sys.executable, "-u", "-m", "qltoq3.cli"] + argv
+
+
 def _gui_state_file() -> Path:
     if sys.platform == "win32":
         base = os.environ.get("APPDATA") or os.path.expanduser("~")
@@ -1373,7 +1383,7 @@ class QlToQ3App(ctk.CTk):
         self._show_log_tab()
         del st["_has_inputs"]
         argv = build_argv(st)
-        cmd = [sys.executable, "-u", "-m", "qltoq3.cli"] + argv
+        cmd = build_cli_cmd(argv)
         self._user_stopped = False
         self._running = True
         self._btn_run.configure(state="disabled")

@@ -1,0 +1,52 @@
+name: Windows Release Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+
+      - name: Build portable and installer
+        shell: powershell
+        run: ./build/windows/build.ps1 -BuildInstaller
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qltoq3-portable-win64
+          path: dist/windows/portable/*.zip
+          if-no-files-found: error
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qltoq3-installer-win64
+          path: dist/windows/installer/*.exe
+          if-no-files-found: error
+
+      - name: Attach artifacts to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/windows/portable/*.zip
+            dist/windows/installer/*.exe
