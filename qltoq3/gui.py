@@ -32,6 +32,13 @@ from .l10n import default_lang_from_env, set_lang, tr
 from .progress import format_elapsed as _format_elapsed_sec
 from .runner import WorkerThread, build_argv, build_cli_cmd
 from .tempdirs import find_stale_temp_dirs, remove_temp_dirs
+from .ui.tabs import (
+    DependenciesTab,
+    LogsTab,
+    SettingsTab,
+    SourcesTab,
+    UpdatesTab,
+)
 from .updater import (
     ReleaseInfo,
     download_file,
@@ -343,11 +350,16 @@ class QlToQ3App(ctk.CTk):
         self.updates_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.log_tab_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
 
-        self._setup_home()
-        self._setup_settings()
-        self._setup_tools(bd, root)
-        self._setup_updates()
-        self._setup_log_tab()
+        self.sources_tab = SourcesTab(self)
+        self.settings_tab = SettingsTab(self)
+        self.dependencies_tab = DependenciesTab(self)
+        self.updates_tab = UpdatesTab(self)
+        self.logs_tab = LogsTab(self)
+        self.sources_tab.build()
+        self.settings_tab.build()
+        self.dependencies_tab.build()
+        self.updates_tab.build()
+        self.logs_tab.build()
 
         # status & run bar
         self.bottom_bar = ctk.CTkFrame(self, fg_color=PANEL)
@@ -1588,46 +1600,12 @@ class QlToQ3App(ctk.CTk):
             return str(out_dir)
 
     def _state(self) -> dict[str, Any]:
-        return {
-            "lang": self._lang_combo.get(),
-            "output": self._out.get().strip(),
-            "paths": list(self._listbox.get(0, END)),
-            "workshop_list": list(self._ws_listbox.get(0, END)),
-            "collection_list": list(self._col_listbox.get(0, END)),
-            "yes_always": self._chk["yes_always"][0].get() == 1,
-            "force": self._chk["force"][0].get() == 1,
-            "no_aas": self._chk["no_aas"][0].get() == 1,
-            "optimize": self._chk["optimize"][0].get() == 1,
-            "dry_run": self._chk["dry_run"][0].get() == 1,
-            "hide_converted": self._chk["hide_converted"][0].get() == 1,
-            "skip_mapless": self._chk["skip_mapless"][0].get() == 1,
-            "verbose": self._chk["verbose"][0].get() == 1,
-            "show_skipped": self._chk["show_skipped"][0].get() == 1,
-            "time_stages": self._chk["time_stages"][0].get() == 1,
-            "check_updates_on_start": self._chk["check_updates_on_start"][0].get() == 1,
-            "auto_download_update": self._chk["auto_download_update"][0].get() == 1,
-            "latest_known_version": self._latest_known_version,
-            "no_aas_optimize": self._chk["no_aas_optimize"][0].get() == 1,
-            "aas_geometry_fast": self._chk["aas_geometry_fast"][0].get() == 1,
-            "aas_bspc_breadthfirst": self._chk["aas_bspc_breadthfirst"][0].get() == 1,
-            "aas_timeout": int(self._num["aas_timeout"].get() or "90"),
-            "coworkers": int(self._num["coworkers"].get() or "3"),
-            "pool_max": int(self._num["pool_max"].get() or "96"),
-            "bspc_concurrent": int(self._num["bspc_concurrent"].get() or "1"),
-            "bsp_patch_method": int(self._bsp_patch.get() or "1"),
-            "aas_threads": self._aas_threads.get().strip(),
-            "bspc": self._path["bspc"].get().strip(),
-            "levelshot": self._path["levelshot"].get().strip(),
-            "steamcmd": self._path["steamcmd"].get().strip(),
-            "ffmpeg": self._path["ffmpeg"].get().strip(),
-            "ql_pak": self._path["ql_pak"].get().strip(),
-            "log": self._log_path.get().strip(),
-            "_has_inputs": bool(
-                list(self._listbox.get(0, END))
-                or list(self._ws_listbox.get(0, END))
-                or list(self._col_listbox.get(0, END))
-            ),
-        }
+        state: dict[str, Any] = {"lang": self._lang_combo.get()}
+        state.update(self.sources_tab.get_state())
+        state.update(self.settings_tab.get_state())
+        state.update(self.dependencies_tab.get_state())
+        state.update(self.updates_tab.get_state())
+        return state
 
     def _save_state(self) -> None:
         try:
