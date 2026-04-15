@@ -345,7 +345,7 @@ class QlToQ3App(ctk.CTk):
         _apply_qltoq3_window_icon(self, bd)
         root = repo_root()
         self._bd = bd
-        self._root = root
+        self._repo_root = root
         self._running = False
         self._user_stopped = False
         self._proc: subprocess.Popen[str] | None = None
@@ -1196,7 +1196,7 @@ class QlToQ3App(ctk.CTk):
             pass
 
     def _apply_state(self, raw: dict[str, Any]) -> None:
-        m = _merge_gui_state(raw, self._bd, self._root)
+        m = _merge_gui_state(raw, self._bd, self._repo_root)
         lg = m["lang"]
         self._lang_combo.set(lg)
         set_lang(lg)
@@ -1253,7 +1253,7 @@ class QlToQ3App(ctk.CTk):
             pass
 
     def _reset_gui_defaults(self) -> None:
-        self._apply_state(default_gui_state(self._bd, self._root))
+        self._apply_state(default_gui_state(self._bd, self._repo_root))
 
     def _add_files(self) -> None:
         fs = filedialog.askopenfilenames(filetypes=[("pk3", "*.pk3"), ("All", "*.*")])
