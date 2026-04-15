@@ -1094,7 +1094,18 @@ class QlToQ3App(ctk.CTk):
             width=210,
             height=34,
         )
-        self._btn_check_updates.pack(anchor="w", padx=10, pady=(0, 14))
+        self._btn_check_updates.pack(anchor="w", padx=10, pady=(0, 8))
+        self._btn_update_now = ctk.CTkButton(
+            sc,
+            text=tr("gui.update_install_now"),
+            command=self._install_update_now,
+            fg_color=BTN_GRAY,
+            hover_color=BTN_GRAY_HOVER,
+            width=210,
+            height=34,
+            state="disabled",
+        )
+        self._btn_update_now.pack(anchor="w", padx=10, pady=(0, 14))
 
         ver_wrap = ctk.CTkFrame(sc, fg_color="transparent")
         ver_wrap.pack(fill="x", padx=10, pady=(0, 10))
@@ -1118,6 +1129,7 @@ class QlToQ3App(ctk.CTk):
         )
         self._lab_update_latest.grid(row=1, column=1, sticky="w", pady=(4, 0))
         self._refresh_latest_version_label()
+        self._refresh_update_install_button()
 
     def _validate_tool_path(self, key: str) -> tuple[str, str]:
         raw = self._path[key].get().strip()
@@ -1299,8 +1311,10 @@ class QlToQ3App(ctk.CTk):
         self._log_path.configure(placeholder_text=tr("gui.log_path_ph"))
         self._btn_run.configure(text=_ICO_PLAY if self._f_ico_btn else tr("gui.run"))
         self._btn_check_updates.configure(text=tr("gui.update_check_now"))
+        self._btn_update_now.configure(text=tr("gui.update_install_now"))
         self._lab_update_current.configure(text=__version__)
         self._refresh_latest_version_label()
+        self._refresh_update_install_button()
         self._refresh_all_tool_path_status()
         self._lang_icon.configure(text=_ICO_GLOBE if self._f_ico_globe else "🌐")
 
@@ -1375,6 +1389,29 @@ class QlToQ3App(ctk.CTk):
     def _refresh_latest_version_label(self) -> None:
         shown = self._latest_known_version or "-"
         self._lab_update_latest.configure(text=shown)
+
+    def _refresh_update_install_button(self) -> None:
+        ready = bool(
+            self._pending_update_installer
+            and self._pending_update_installer.is_file()
+            and self._pending_update_version
+        )
+        self._btn_update_now.configure(state=("normal" if ready else "disabled"))
+
+    def _install_update_now(self) -> None:
+        if (
+            not self._pending_update_installer
+            or not self._pending_update_installer.is_file()
+            or not self._pending_update_version
+        ):
+            self._status.configure(text=tr("gui.update_no_pending"), text_color="#aaaaaa")
+            self._refresh_update_install_button()
+            return
+        self._status.configure(
+            text=tr("gui.update_silent_start", latest=self._pending_update_version),
+            text_color="#aaaaaa",
+        )
+        self._on_close()
 
     def _check_updates_now(self) -> None:
         self._status.configure(text=tr("gui.update_checking"), text_color="#aaaaaa")
@@ -1479,41 +1516,13 @@ class QlToQ3App(ctk.CTk):
         self.after(0, self._schedule_silent_update, info.latest_version, installer_path)
 
     def _schedule_silent_update(self, latest: str, installer_path: Path) -> None:
-        if self._running:
-            self._pending_update_installer = installer_path
-            self._pending_update_version = latest
-            self._status.configure(
-                text=tr("gui.update_deferred", latest=latest),
-                text_color="#aaaaaa",
-            )
-            return
-        self._run_silent_update(installer_path, latest)
-
-    def _run_silent_update(self, installer_path: Path, latest: str) -> None:
+        self._pending_update_installer = installer_path
+        self._pending_update_version = latest
+        self._refresh_update_install_button()
         self._status.configure(
-            text=tr("gui.update_silent_start", latest=latest),
+            text=tr("gui.update_deferred", latest=latest),
             text_color="#aaaaaa",
         )
-        if not installer_path.is_file():
-            self._status.configure(
-                text=tr("gui.update_download_failed"),
-                text_color="#ff5555",
-            )
-            return
-        try:
-            self._on_close()
-            subprocess.Popen(
-                [
-                    str(installer_path),
-                    "/VERYSILENT",
-                    "/SUPPRESSMSGBOXES",
-                    "/NORESTART",
-                    "/SP-",
-                ],
-                cwd=str(installer_path.parent),
-            )
-        except OSError as e:
-            print(tr("gui.update_run_failed", error=e), file=sys.stderr)
 
     def _remove_col(self) -> None:
         for i in reversed(self._col_listbox.curselection()):
@@ -2084,13 +2093,6 @@ class QlToQ3App(ctk.CTk):
             self._status.configure(
                 text=tr("gui.done_err", code=code, t=td), text_color="#ff5555"
             )
-        if self._pending_update_installer and self._pending_update_version:
-            installer = self._pending_update_installer
-            latest = self._pending_update_version
-            self._pending_update_installer = None
-            self._pending_update_version = ""
-            self._run_silent_update(installer, latest)
-
     def _stop(self) -> None:
         if self._proc and self._running:
             self._user_stopped = True
@@ -2107,6 +2109,10 @@ class QlToQ3App(ctk.CTk):
         webbrowser.open("https://q3unite.su/")
 
     def _on_close(self) -> None:
+        pending_installer = self._pending_update_installer
+        pending_latest = self._pending_update_version
+        self._pending_update_installer = None
+        self._pending_update_version = ""
         self._spinner_stop()
         if self._proc and self._running:
             if self._run_started_t is not None:
@@ -2114,6 +2120,7 @@ class QlToQ3App(ctk.CTk):
             self._user_stopped = True
             self._proc.terminate()
         self._elapsed_stop()
+        self._refresh_update_install_button()
         tp = getattr(self, "_temp_ico_path", None)
         if tp is not None:
             try:
@@ -2122,6 +2129,20 @@ class QlToQ3App(ctk.CTk):
                 pass
         self._save_state()
         self.destroy()
+        if pending_installer and pending_latest and pending_installer.is_file():
+            try:
+                subprocess.Popen(
+                    [
+                        str(pending_installer),
+                        "/VERYSILENT",
+                        "/SUPPRESSMSGBOXES",
+                        "/NORESTART",
+                        "/SP-",
+                    ],
+                    cwd=str(pending_installer.parent),
+                )
+            except OSError as e:
+                print(tr("gui.update_run_failed", error=e), file=sys.stderr)
 
 
 def _patch_tkinter_py314() -> None:
