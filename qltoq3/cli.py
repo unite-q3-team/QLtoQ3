@@ -381,7 +381,9 @@ def main() -> None:
                 print(f"warning: could not load ql pak00: {e}")
 
     if not input_files:
-        print(tr("gui.err_paths"))
+        had_requested_inputs = bool(args.paths or args.workshop or args.collection)
+        if not had_requested_inputs:
+            print(tr("gui.err_paths"))
         return
 
     if args.dry_run:

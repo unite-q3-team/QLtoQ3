@@ -37,6 +37,7 @@ dependencies = [
 
 [project.optional-dependencies]
 gui = ["customtkinter>=5.2"]
+dev = ["pytest>=8.0"]
 
 [project.urls]
 Homepage = "https://q3unite.su/"
