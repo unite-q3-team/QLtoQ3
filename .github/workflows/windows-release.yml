@@ -75,5 +75,3 @@ jobs:
             dist/windows/installer/*.sha256
           body: |
             release: ${{ github.ref_name }}
-            included: windows installer, portable zip
-            hashes: sha256 files for installer and portable

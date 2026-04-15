@@ -79,12 +79,12 @@ CHK_DEF: list[tuple[str, str]] = [
     ("verbose", "gui.opt.verbose"),
     ("show_skipped", "gui.opt.show_skipped"),
     ("time_stages", "gui.opt.time_stages"),
-    ("check_updates_on_start", "gui.opt.check_updates_on_start"),
-    ("auto_download_update", "gui.opt.auto_download_update"),
     ("no_aas_optimize", "gui.opt.no_aas_optimize"),
     ("aas_geometry_fast", "gui.opt.aas_geometry_fast"),
     ("aas_bspc_breadthfirst", "gui.opt.aas_bspc_breadthfirst"),
 ]
+
+_TOOL_STATUS_DEBOUNCE_MS = 320
 
 
 def split_tokens(s: str) -> list[str]:
@@ -397,6 +397,9 @@ class QlToQ3App(ctk.CTk):
         self._num: dict[str, ctk.CTkEntry] = {}
         self._path: dict[str, ctk.CTkEntry] = {}
         self._path_browse_btns: list[ctk.CTkButton] = []
+        self._path_status_dots: dict[str, ctk.CTkLabel] = {}
+        self._path_status_msgs: dict[str, str] = {}
+        self._path_status_after: dict[str, str] = {}
 
         # layout
         self.grid_columnconfigure(1, weight=1)
@@ -407,7 +410,7 @@ class QlToQ3App(ctk.CTk):
             self, corner_radius=0, fg_color=SIDEBAR_BG, width=200
         )
         self.sidebar.grid(row=0, column=0, sticky="nsew")
-        self.sidebar.grid_rowconfigure(5, weight=1)
+        self.sidebar.grid_rowconfigure(6, weight=1)
 
         self._nav_sources = self._mk_nav_btn(0, tr("gui.tab_sources"), self._show_home)
         self._nav_sources.grid(row=1, column=0, sticky="ew", padx=10, pady=2)
@@ -419,12 +422,14 @@ class QlToQ3App(ctk.CTk):
             2, tr("gui.tab_dependencies"), self._show_tools
         )
         self._nav_tools.grid(row=3, column=0, sticky="ew", padx=10, pady=2)
-        self._nav_logs = self._mk_nav_btn(3, tr("gui.tab_logs"), self._show_log_tab)
-        self._nav_logs.grid(row=4, column=0, sticky="ew", padx=10, pady=2)
+        self._nav_updates = self._mk_nav_btn(3, tr("gui.tab_updates"), self._show_updates)
+        self._nav_updates.grid(row=4, column=0, sticky="ew", padx=10, pady=2)
+        self._nav_logs = self._mk_nav_btn(4, tr("gui.tab_logs"), self._show_log_tab)
+        self._nav_logs.grid(row=5, column=0, sticky="ew", padx=10, pady=2)
 
         # bottom sidebar (lang)
         self._lang_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        self._lang_frame.grid(row=6, column=0, padx=10, pady=20, sticky="ew")
+        self._lang_frame.grid(row=7, column=0, padx=10, pady=20, sticky="ew")
         self._lang_combo = ctk.CTkComboBox(
             self._lang_frame,
             values=["en", "ru"],
@@ -455,11 +460,13 @@ class QlToQ3App(ctk.CTk):
         )
         self.settings_scroll.grid(row=0, column=0, sticky="nsew")
         self.tools_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        self.updates_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.log_tab_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
 
         self._setup_home()
         self._setup_settings()
         self._setup_tools(bd, root)
+        self._setup_updates()
         self._setup_log_tab()
 
         # status & run bar
@@ -621,6 +628,7 @@ class QlToQ3App(ctk.CTk):
             "gui.tab_sources",
             "gui.tab_settings",
             "gui.tab_dependencies",
+            "gui.tab_updates",
             "gui.tab_logs",
         ]
         btn = ctk.CTkButton(
@@ -641,6 +649,7 @@ class QlToQ3App(ctk.CTk):
             self._nav_sources,
             self._nav_settings,
             self._nav_tools,
+            self._nav_updates,
             self._nav_logs,
         ]:
             b.configure(fg_color="transparent")
@@ -650,6 +659,7 @@ class QlToQ3App(ctk.CTk):
         self._select_nav(self._nav_sources)
         self.settings_frame.grid_forget()
         self.tools_frame.grid_forget()
+        self.updates_frame.grid_forget()
         self.log_tab_frame.grid_forget()
         self.home_frame.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
 
@@ -657,6 +667,7 @@ class QlToQ3App(ctk.CTk):
         self._select_nav(self._nav_settings)
         self.home_frame.grid_forget()
         self.tools_frame.grid_forget()
+        self.updates_frame.grid_forget()
         self.log_tab_frame.grid_forget()
         self.settings_frame.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
 
@@ -664,14 +675,25 @@ class QlToQ3App(ctk.CTk):
         self._select_nav(self._nav_tools)
         self.home_frame.grid_forget()
         self.settings_frame.grid_forget()
+        self.updates_frame.grid_forget()
         self.log_tab_frame.grid_forget()
+        self._refresh_all_tool_path_status()
         self.tools_frame.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+
+    def _show_updates(self) -> None:
+        self._select_nav(self._nav_updates)
+        self.home_frame.grid_forget()
+        self.settings_frame.grid_forget()
+        self.tools_frame.grid_forget()
+        self.log_tab_frame.grid_forget()
+        self.updates_frame.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
 
     def _show_log_tab(self) -> None:
         self._select_nav(self._nav_logs)
         self.home_frame.grid_forget()
         self.settings_frame.grid_forget()
         self.tools_frame.grid_forget()
+        self.updates_frame.grid_forget()
         self.log_tab_frame.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
 
     def _setup_home(self) -> None:
@@ -688,6 +710,17 @@ class QlToQ3App(ctk.CTk):
         self._btn_out = self._mk_browse_btn(out_inner, self._browse_out)
         self._btn_out.pack(side="right")
         _bind_tip(self._btn_out, lambda: tr("gui.tip_browse_out"))
+        self._btn_out_open = ctk.CTkButton(
+            out_inner,
+            text=tr("gui.open_output"),
+            command=self._open_output_dir,
+            fg_color=BTN_GRAY,
+            hover_color=BTN_GRAY_HOVER,
+            height=32,
+            width=110,
+        )
+        self._btn_out_open.pack(side="right", padx=(0, 8))
+        _bind_tip(self._btn_out_open, lambda: tr("gui.open_output"))
 
         self._in_mode = ctk.CTkSegmentedButton(
             self.home_frame,
@@ -727,6 +760,14 @@ class QlToQ3App(ctk.CTk):
         self._listbox.configure(yscrollcommand=sb.set)
         self._listbox.pack(side="left", fill="both", expand=True, padx=(5, 0), pady=5)
         sb.pack(side="right", fill="y", padx=(0, 2), pady=5)
+        self._listbox_empty = ctk.CTkLabel(
+            lb_container,
+            text=tr("gui.local_drop_hint"),
+            text_color="#7f7f7f",
+            anchor="center",
+            justify="center",
+        )
+        self._listbox_empty.place(relx=0.5, rely=0.5, anchor="center")
         btn_row = ctk.CTkFrame(self.local_frame, fg_color="transparent")
         btn_row.grid(row=2, column=0, sticky="ew")
         self._btn_add = ctk.CTkButton(
@@ -774,6 +815,7 @@ class QlToQ3App(ctk.CTk):
         )
         self._btn_clear.pack(side="left")
         _bind_tip(self._btn_clear, lambda: tr("gui.tip_clear"))
+        self._refresh_local_placeholder()
 
         self.steam_frame = ctk.CTkFrame(self.home_frame, fg_color="transparent")
         self.steam_frame.grid_columnconfigure((0, 1), weight=1)
@@ -813,7 +855,7 @@ class QlToQ3App(ctk.CTk):
         self._ws_listbox.pack(fill="both", expand=True, padx=5, pady=5)
         self._ws_listbox.bind("<Delete>", lambda _: self._remove_ws())
         ws_btn_row = ctk.CTkFrame(ws_col, fg_color="transparent")
-        ws_btn_row.pack(fill="x")
+        ws_btn_row.pack(fill="x", pady=(8, 0))
         self._btn_ws_rm = ctk.CTkButton(
             ws_btn_row,
             text=_ICO_RM if self._f_ico_small else "rm",
@@ -874,7 +916,7 @@ class QlToQ3App(ctk.CTk):
         self._col_listbox.pack(fill="both", expand=True, padx=5, pady=5)
         self._col_listbox.bind("<Delete>", lambda _: self._remove_col())
         col_btn_row = ctk.CTkFrame(col_col, fg_color="transparent")
-        col_btn_row.pack(fill="x")
+        col_btn_row.pack(fill="x", pady=(8, 0))
         self._btn_col_rm = ctk.CTkButton(
             col_btn_row,
             text=_ICO_RM if self._f_ico_small else "rm",
@@ -972,40 +1014,6 @@ class QlToQ3App(ctk.CTk):
             placeholder_text=tr("gui.placeholder_auto"),
         )
         self._aas_threads.pack(side="right")
-        upd_sep = ctk.CTkFrame(sc, height=2, fg_color="#333333")
-        upd_sep.pack(fill="x", pady=25)
-        self._lab_update = ctk.CTkLabel(
-            sc,
-            text=tr("gui.header_updates").lower(),
-            font=ctk.CTkFont(weight="bold"),
-        )
-        self._lab_update.pack(anchor="w", pady=(0, 15))
-        self._lang_labels.append((self._lab_update, "gui.header_updates"))
-        upd_row = ctk.CTkFrame(sc, fg_color="transparent")
-        upd_row.pack(fill="x", padx=10, pady=(0, 8))
-        self._btn_check_updates = ctk.CTkButton(
-            upd_row,
-            text=tr("gui.update_check_now"),
-            command=self._check_updates_now,
-            fg_color=ACCENT,
-            hover_color=ACCENT_HOVER,
-            width=190,
-            height=34,
-        )
-        self._btn_check_updates.pack(side="left")
-        self._lab_update_current = ctk.CTkLabel(
-            upd_row,
-            text=tr("gui.update_current_version", version=__version__),
-            text_color="#aaaaaa",
-        )
-        self._lab_update_current.pack(side="left", padx=(12, 0))
-        self._lab_update_latest = ctk.CTkLabel(
-            sc,
-            text=tr("gui.update_latest_version", version="-"),
-            text_color="#aaaaaa",
-            anchor="w",
-        )
-        self._lab_update_latest.pack(fill="x", padx=10, pady=(0, 10))
         self._btn_reset = ctk.CTkButton(
             sc,
             text=tr("gui.reset"),
@@ -1035,10 +1043,120 @@ class QlToQ3App(ctk.CTk):
             e.insert(0, default)
             e.pack(side="left", fill="x", expand=True, padx=(0, 8))
             self._path[nk] = e
+            e.bind("<KeyRelease>", lambda _ev, k=nk: self._schedule_tool_path_status(k))
+            e.bind("<FocusOut>", lambda _ev, k=nk: self._refresh_tool_path_status(k))
             bb = self._mk_browse_btn(row, lambda k=nk: self._browse_tool(k))
             bb.pack(side="right")
             self._path_browse_btns.append(bb)
             _bind_tip(bb, lambda: tr("gui.browse"))
+            dot = ctk.CTkLabel(row, text="●", width=16, text_color="#808080")
+            dot.pack(side="right", padx=(0, 8))
+            self._path_status_dots[nk] = dot
+            self._path_status_msgs[nk] = tr("gui.path_status_empty")
+            _bind_tip(dot, lambda k=nk: self._path_status_msgs.get(k, ""))
+        self._refresh_all_tool_path_status()
+
+    def _setup_updates(self) -> None:
+        self.updates_frame.grid_columnconfigure(0, weight=1)
+        sc = ctk.CTkScrollableFrame(
+            self.updates_frame, fg_color="transparent", corner_radius=0
+        )
+        sc.grid(row=0, column=0, sticky="nsew")
+        self._lab_update = ctk.CTkLabel(
+            sc,
+            text=tr("gui.header_updates").lower(),
+            font=ctk.CTkFont(weight="bold"),
+        )
+        self._lab_update.pack(anchor="w", pady=(0, 15))
+        self._lang_labels.append((self._lab_update, "gui.header_updates"))
+
+        self._chk_update_wrap = ctk.CTkFrame(sc, fg_color="transparent")
+        self._chk_update_wrap.pack(fill="x", padx=10, pady=(0, 10))
+        for key, lk in (
+            ("check_updates_on_start", "gui.opt.check_updates_on_start"),
+            ("auto_download_update", "gui.opt.auto_download_update"),
+        ):
+            cb = ctk.CTkCheckBox(
+                self._chk_update_wrap, text=tr(lk), fg_color=ACCENT, hover_color=ACCENT_HOVER
+            )
+            if hasattr(cb, "_label"):
+                cb._label.configure(wraplength=560, justify="left")
+            cb.pack(anchor="w", fill="x", pady=5)
+            self._chk[key] = (cb, lk)
+
+        self._btn_check_updates = ctk.CTkButton(
+            sc,
+            text=tr("gui.update_check_now"),
+            command=self._check_updates_now,
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+            width=210,
+            height=34,
+        )
+        self._btn_check_updates.pack(anchor="w", padx=10, pady=(0, 14))
+
+        ver_wrap = ctk.CTkFrame(sc, fg_color="transparent")
+        ver_wrap.pack(fill="x", padx=10, pady=(0, 10))
+        ver_wrap.grid_columnconfigure(1, weight=1)
+        self._lab_update_current_k = ctk.CTkLabel(
+            ver_wrap, text=tr("gui.update_current_label"), text_color="#aaaaaa"
+        )
+        self._lab_update_current_k.grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self._lang_labels.append((self._lab_update_current_k, "gui.update_current_label"))
+        self._lab_update_current = ctk.CTkLabel(
+            ver_wrap, text=__version__, text_color="#aaaaaa", anchor="w"
+        )
+        self._lab_update_current.grid(row=0, column=1, sticky="w")
+        self._lab_update_latest_k = ctk.CTkLabel(
+            ver_wrap, text=tr("gui.update_latest_label"), text_color="#aaaaaa"
+        )
+        self._lab_update_latest_k.grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(4, 0))
+        self._lang_labels.append((self._lab_update_latest_k, "gui.update_latest_label"))
+        self._lab_update_latest = ctk.CTkLabel(
+            ver_wrap, text="-", text_color="#aaaaaa", anchor="w"
+        )
+        self._lab_update_latest.grid(row=1, column=1, sticky="w", pady=(4, 0))
+        self._refresh_latest_version_label()
+
+    def _validate_tool_path(self, key: str) -> tuple[str, str]:
+        raw = self._path[key].get().strip()
+        if not raw:
+            return "#808080", tr("gui.path_status_empty")
+        p = Path(raw).expanduser()
+        if not p.exists():
+            return "#ff5555", tr("gui.path_status_missing")
+        if p.is_dir():
+            return "#ffb347", tr("gui.path_status_need_file")
+        return "#55cc66", tr("gui.path_status_ok")
+
+    def _refresh_tool_path_status(self, key: str) -> None:
+        after_id = self._path_status_after.pop(key, None)
+        if after_id:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+        color, msg = self._validate_tool_path(key)
+        dot = self._path_status_dots.get(key)
+        if dot is not None:
+            dot.configure(text_color=color)
+        self._path_status_msgs[key] = msg
+
+    def _schedule_tool_path_status(self, key: str) -> None:
+        prev = self._path_status_after.get(key)
+        if prev:
+            try:
+                self.after_cancel(prev)
+            except Exception:
+                pass
+        self._path_status_after[key] = self.after(
+            _TOOL_STATUS_DEBOUNCE_MS,
+            lambda k=key: self._refresh_tool_path_status(k),
+        )
+
+    def _refresh_all_tool_path_status(self) -> None:
+        for key in self._path:
+            self._refresh_tool_path_status(key)
 
     def _browse_tool(self, key: str) -> None:
         e = self._path[key]
@@ -1063,6 +1181,7 @@ class QlToQ3App(ctk.CTk):
         if p:
             e.delete(0, "end")
             e.insert(0, p)
+            self._refresh_tool_path_status(key)
 
     def _setup_log_tab(self) -> None:
         self.log_tab_frame.grid_columnconfigure(0, weight=1)
@@ -1090,6 +1209,24 @@ class QlToQ3App(ctk.CTk):
         self._log_box.bind("<Button-5>", self._on_log_scroll)
         btn_log = ctk.CTkFrame(log_group, fg_color="transparent")
         btn_log.grid(row=2, column=0, sticky="ew")
+        self._btn_log_copy = ctk.CTkButton(
+            btn_log,
+            text=tr("gui.copy_log"),
+            command=self._copy_log,
+            fg_color="#333333",
+            hover_color="#444444",
+            width=140,
+        )
+        self._btn_log_copy.pack(side="left", padx=(0, 8))
+        self._btn_log_save = ctk.CTkButton(
+            btn_log,
+            text=tr("gui.save_log"),
+            command=self._save_log_to_file,
+            fg_color="#333333",
+            hover_color="#444444",
+            width=160,
+        )
+        self._btn_log_save.pack(side="left")
         self._btn_log_clear = ctk.CTkButton(
             btn_log,
             text=tr("gui.clear_log"),
@@ -1145,7 +1282,11 @@ class QlToQ3App(ctk.CTk):
             text=_ICO_PLUS if self._f_ico_small else tr("gui.add")
         )
         self._refresh_browse_btns()
+        self._btn_out_open.configure(text=tr("gui.open_output"))
+        self._listbox_empty.configure(text=tr("gui.local_drop_hint"))
         self._btn_stop.configure(text=_ICO_STOP if self._f_ico_btn else tr("gui.stop"))
+        self._btn_log_copy.configure(text=tr("gui.copy_log"))
+        self._btn_log_save.configure(text=tr("gui.save_log"))
         self._btn_log_clear.configure(text=tr("gui.clear_log"))
         self._btn_reset.configure(text=tr("gui.reset"))
         for _k, (cb, lk) in self._chk.items():
@@ -1157,10 +1298,9 @@ class QlToQ3App(ctk.CTk):
         self._log_path.configure(placeholder_text=tr("gui.log_path_ph"))
         self._btn_run.configure(text=_ICO_PLAY if self._f_ico_btn else tr("gui.run"))
         self._btn_check_updates.configure(text=tr("gui.update_check_now"))
-        self._lab_update_current.configure(
-            text=tr("gui.update_current_version", version=__version__)
-        )
+        self._lab_update_current.configure(text=__version__)
         self._refresh_latest_version_label()
+        self._refresh_all_tool_path_status()
         self._lang_icon.configure(text=_ICO_GLOBE if self._f_ico_globe else "🌐")
 
     def _on_in_mode(self, choice: str) -> None:
@@ -1233,9 +1373,7 @@ class QlToQ3App(ctk.CTk):
 
     def _refresh_latest_version_label(self) -> None:
         shown = self._latest_known_version or "-"
-        self._lab_update_latest.configure(
-            text=tr("gui.update_latest_version", version=shown)
-        )
+        self._lab_update_latest.configure(text=shown)
 
     def _check_updates_now(self) -> None:
         self._status.configure(text=tr("gui.update_checking"), text_color="#aaaaaa")
@@ -1382,6 +1520,39 @@ class QlToQ3App(ctk.CTk):
 
     def _clear_col_list(self) -> None:
         self._col_listbox.delete(0, END)
+
+    def _refresh_local_placeholder(self) -> None:
+        if self._listbox.size() == 0:
+            self._listbox_empty.place(relx=0.5, rely=0.5, anchor="center")
+        else:
+            self._listbox_empty.place_forget()
+
+    def _open_output_dir(self) -> None:
+        raw = self._out.get().strip()
+        if not raw:
+            self._status.configure(text=tr("gui.err_output"), text_color="#ff5555")
+            return
+        p = Path(raw).expanduser()
+        if not p.is_absolute():
+            p = Path.cwd() / p
+        try:
+            p = p.resolve(strict=False)
+        except OSError:
+            pass
+        if not p.exists() or not p.is_dir():
+            self._status.configure(text=tr("gui.out_retry_hint"), text_color="#ff5555")
+            return
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(p))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(p)])
+            else:
+                subprocess.Popen(["xdg-open", str(p)])
+        except OSError as e:
+            self._status.configure(
+                text=tr("gui.open_output_failed", error=e), text_color="#ff5555"
+            )
 
     def _browse_out(self) -> None:
         d = filedialog.askdirectory()
@@ -1565,6 +1736,7 @@ class QlToQ3App(ctk.CTk):
         self._listbox.delete(0, END)
         for p in _as_str_list(m.get("paths")):
             self._listbox.insert(END, p)
+        self._refresh_local_placeholder()
         self._ws_listbox.delete(0, END)
         for x in _as_str_list(m.get("workshop_list")):
             self._ws_listbox.insert(END, x)
@@ -1572,6 +1744,11 @@ class QlToQ3App(ctk.CTk):
         for x in _as_str_list(m.get("collection_list")):
             self._col_listbox.insert(END, x)
         for key, _ in CHK_DEF:
+            if m.get(key, False):
+                self._chk[key][0].select()
+            else:
+                self._chk[key][0].deselect()
+        for key in ("check_updates_on_start", "auto_download_update"):
             if m.get(key, False):
                 self._chk[key][0].select()
             else:
@@ -1590,6 +1767,7 @@ class QlToQ3App(ctk.CTk):
         for nk in ("bspc", "levelshot", "steamcmd", "ffmpeg", "ql_pak"):
             self._path[nk].delete(0, "end")
             self._path[nk].insert(0, str(m.get(nk, "")))
+        self._refresh_all_tool_path_status()
         self._log_path.delete(0, "end")
         self._log_path.insert(0, str(m.get("log", "")).strip())
         self._on_lang(lg)
@@ -1621,18 +1799,22 @@ class QlToQ3App(ctk.CTk):
         fs = filedialog.askopenfilenames(filetypes=[("pk3", "*.pk3"), ("All", "*.*")])
         for f in fs:
             self._listbox.insert(END, f)
+        self._refresh_local_placeholder()
 
     def _add_dir(self) -> None:
         d = filedialog.askdirectory()
         if d:
             self._listbox.insert(END, d)
+        self._refresh_local_placeholder()
 
     def _remove_sel(self) -> None:
         for i in reversed(self._listbox.curselection()):
             self._listbox.delete(i)
+        self._refresh_local_placeholder()
 
     def _clear_list(self) -> None:
         self._listbox.delete(0, END)
+        self._refresh_local_placeholder()
 
     def _on_log_scroll(self, _event: Any = None) -> None:
         self.after(50, self._check_log_at_bottom)
@@ -1649,6 +1831,38 @@ class QlToQ3App(ctk.CTk):
         self._log_box.delete("1.0", "end")
         self._log_box.configure(state="disabled")
         self._log_autoscroll = True
+
+    def _copy_log(self) -> None:
+        text = self._log_box.get("1.0", "end-1c")
+        if not text.strip():
+            self._status.configure(text=tr("gui.log_empty"), text_color="#aaaaaa")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self._status.configure(text=tr("gui.log_copied"), text_color="#55ff55")
+
+    def _save_log_to_file(self) -> None:
+        text = self._log_box.get("1.0", "end-1c")
+        if not text.strip():
+            self._status.configure(text=tr("gui.log_empty"), text_color="#aaaaaa")
+            return
+        target = filedialog.asksaveasfilename(
+            title=tr("gui.save_log"),
+            defaultextension=".txt",
+            filetypes=[("Text", "*.txt"), ("All", "*.*")],
+            initialfile="qltoq3-log.txt",
+        )
+        if not target:
+            return
+        try:
+            Path(target).write_text(text, encoding="utf-8")
+        except OSError as e:
+            self._status.configure(
+                text=tr("gui.log_save_failed", error=e),
+                text_color="#ff5555",
+            )
+            return
+        self._status.configure(text=tr("gui.log_saved"), text_color="#55ff55")
 
     def _append_log_chunk(self, chunk: str) -> None:
         self._log_box.configure(state="normal")
