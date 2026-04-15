@@ -48,15 +48,16 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\QLtoQ3"; Filename: "{app}\qltoq3-gui.exe"
-Name: "{group}\QLtoQ3 CLI"; Filename: "{app}\qltoq3-cli.exe"
-Name: "{autodesktop}\QLtoQ3"; Filename: "{app}\qltoq3-gui.exe"; Tasks: desktopicon
+Name: "{autoprograms}\QLtoQ3\QLtoQ3"; Filename: "{app}\qltoq3-gui.exe"
+Name: "{autoprograms}\QLtoQ3\QLtoQ3 CLI"; Filename: "{app}\qltoq3-cli.exe"
+Name: "{userdesktop}\QLtoQ3"; Filename: "{app}\qltoq3-gui.exe"; Tasks: desktopicon; Check: not IsAdminInstallMode
+Name: "{commondesktop}\QLtoQ3"; Filename: "{app}\qltoq3-gui.exe"; Tasks: desktopicon; Check: IsAdminInstallMode
 
 [Run]
 Filename: "{app}\qltoq3-gui.exe"; Description: "Launch QLtoQ3"; Flags: nowait postinstall skipifsilent
