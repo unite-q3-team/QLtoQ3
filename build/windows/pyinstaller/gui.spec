@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
@@ -11,11 +12,11 @@ if bundled_dir.is_dir():
     datas.append((str(bundled_dir), "qltoq3/bundled"))
 
 hiddenimports = collect_submodules("customtkinter")
-icon_path = bundled_dir / "logo.ico"
-icon = str(icon_path) if icon_path.is_file() else None
+icon_path = os.environ.get("QLTOQ3_ICON_PATH") or str(bundled_dir / "logo.ico")
+icon = icon_path if Path(icon_path).is_file() else None
 
 a = Analysis(
-    [str(project_root / "qltoq3" / "gui.py")],
+    [str(project_root / "build" / "windows" / "pyinstaller" / "run_gui.py")],
     pathex=[str(project_root)],
     binaries=[],
     datas=datas,

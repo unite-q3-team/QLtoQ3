@@ -17,6 +17,8 @@ $InstallerOut = Join-Path $DistRoot "installer"
 $CliSpec = Join-Path $RepoRoot "build\windows\pyinstaller\cli.spec"
 $GuiSpec = Join-Path $RepoRoot "build\windows\pyinstaller\gui.spec"
 $InstallerScript = Join-Path $RepoRoot "build\windows\installer\qltoq3.iss"
+$LogoPng = Join-Path $RepoRoot "qltoq3\bundled\logo.png"
+$BuildIconPath = Join-Path $RepoRoot "build\windows\out\qltoq3.ico"
 
 function Invoke-CheckedPython {
     param(
@@ -44,9 +46,20 @@ try {
         }
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $BuildIconPath) -Force | Out-Null
 
     Invoke-CheckedPython -Arguments @("-m", "pip", "install", "--upgrade", "pip")
     Invoke-CheckedPython -Arguments @("-m", "pip", "install", ".", "pyinstaller")
+
+    if (-not (Test-Path $LogoPng)) {
+        throw ("Logo file not found: {0}" -f $LogoPng)
+    }
+    $env:QLTOQ3_LOGO_PNG = $LogoPng
+    $env:QLTOQ3_ICON_PATH = $BuildIconPath
+    Invoke-CheckedPython -Arguments @(
+        "-c",
+        "import os; from PIL import Image; Image.open(os.environ['QLTOQ3_LOGO_PNG']).save(os.environ['QLTOQ3_ICON_PATH'], format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
+    )
 
     Invoke-CheckedPython -Arguments @(
         "-m", "PyInstaller",
@@ -94,6 +107,7 @@ try {
             "/DAppVersion=$Version" `
             "/DSourceDir=$PortableRoot" `
             "/DOutputDir=$InstallerOut" `
+            "/DInstallerIconFile=$BuildIconPath" `
             "$InstallerScript"
         if ($LASTEXITCODE -ne 0) {
             throw ("inno setup compiler failed, code: {0}." -f $LASTEXITCODE)

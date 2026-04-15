@@ -12,6 +12,10 @@
   #define OutputDir "..\..\..\dist\windows\installer"
 #endif
 
+#ifndef InstallerIconFile
+  #define InstallerIconFile ""
+#endif
+
 [Setup]
 AppId={{6D7E0C37-A3EB-4305-B2F3-F2FC12753E0F}
 AppName={#MyAppName}
@@ -28,6 +32,9 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 UninstallDisplayIcon={app}\qltoq3-gui.exe
+#if InstallerIconFile != ""
+SetupIconFile={#InstallerIconFile}
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
