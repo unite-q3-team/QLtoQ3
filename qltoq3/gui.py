@@ -1395,7 +1395,11 @@ class QlToQ3App(ctk.CTk):
         d = filedialog.askdirectory(title=title, initialdir=start_dir)
         if not d:
             return None
-        p = Path(d)
+        p = Path(d).expanduser()
+        try:
+            p = p.resolve(strict=False)
+        except OSError:
+            pass
         self._out.delete(0, "end")
         self._out.insert(0, str(p))
         return p
@@ -1412,6 +1416,12 @@ class QlToQ3App(ctk.CTk):
 
     def _prepare_output_dir(self, raw_output: str) -> str | None:
         out_dir = Path(raw_output).expanduser()
+        if not out_dir.is_absolute():
+            out_dir = Path.cwd() / out_dir
+        try:
+            out_dir = out_dir.resolve(strict=False)
+        except OSError:
+            pass
         while True:
             if out_dir.exists() and not out_dir.is_dir():
                 messagebox.showerror(
