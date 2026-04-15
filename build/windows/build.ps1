@@ -50,7 +50,7 @@ try {
     New-Item -ItemType Directory -Path (Split-Path -Parent $BuildIconPath) -Force | Out-Null
 
     Invoke-CheckedPython -Arguments @("-m", "pip", "install", "--upgrade", "pip")
-    Invoke-CheckedPython -Arguments @("-m", "pip", "install", ".", "pyinstaller")
+    Invoke-CheckedPython -Arguments @("-m", "pip", "install", "-r", "requirements.txt", "pyinstaller")
 
     if (-not (Test-Path $LogoPng)) {
         throw ("Logo file not found: {0}" -f $LogoPng)
